@@ -283,6 +283,14 @@ public final class DownloadEngine {
         YoutubeDLRequest request = new YoutubeDLRequest(picked);
         request.addOption("-f", "bestaudio/best");
         request.addOption("--no-playlist");
+        // The default web client has to solve YouTube's JavaScript player challenge
+        // before it can name a stream, which measured 13-20 s per track on this device
+        // and was what the progress bar sat on at 6%. The android client returns the
+        // same audio without that round trip: 16.5 s of extraction became 4.0 s on a
+        // back-to-back test of the same network and device.
+        request.addOption("--extractor-args", "youtube:player_client=android");
+
+
         request.addOption("--no-warnings");
         request.addOption("--no-mtime");
         request.addOption("--extract-audio");
@@ -418,6 +426,8 @@ public final class DownloadEngine {
         /** Shared with the retry loop so a new attempt starts above the last one. */
         private final int[] highWater;
         private int lastEmitted = -1;
+        /** Progress callbacks seen while yt-dlp is still resolving (progress == -1). */
+        private int extractTicks;
 
         ProgressFunction(Listener listener, Task task, int[] highWater) {
             this.listener = listener;
@@ -428,9 +438,27 @@ public final class DownloadEngine {
         @Override
         public Unit invoke(Float progress, Long eta, String line) {
             if (task != null && task.isCancelled()) return Unit.INSTANCE;
-            int pct = progress == null ? 0 : Math.round(progress);
-            pct = Math.max(0, Math.min(100, pct));
+            int raw = progress == null ? -1 : Math.round(progress);
 
+            // yt-dlp reports -1 while it is still resolving the media: running the
+            // JavaScript player challenge, picking a format and opening the stream. That
+            // phase takes 10-20 s and used to be clamped to 0 and then pinned at the 6%
+            // floor, so the row sat on "6% - Working" for the whole extraction and only
+            // moved once the (very fast) transfer began. Reporting it as its own creeping
+            // stage is what makes the wait legible.
+            if (raw < 0) {
+                if (listener != null) {
+                    // Creep slowly inside 6..14 so the row visibly moves without ever
+                    // pretending the transfer has started.
+                    int creep = Math.min(14, 6 + (int) (extractTicks / 3));
+                    extractTicks++;
+                    listener.onProgress(Math.max(6, Math.min(creep, 14)), "Fetching audio");
+                }
+                return Unit.INSTANCE;
+            }
+
+            int pct = Math.max(0, Math.min(100, raw));
+            extractTicks = 0;
             // A retry starts its own 0..100 counter, so it is lifted above the best value
             // the previous attempt reached. The floor is capped at the band ceiling: once
             // the mark is already 86, "86 - floor" would go negative and the scaled value
