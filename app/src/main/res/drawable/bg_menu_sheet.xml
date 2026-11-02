@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Action sheet used by the three-dot menus: the same deep green glass as the rest
+     of the app, brighter than the background so it floats over the artwork. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#F7071A0D" />
+    <stroke android:width="1dp" android:color="#334CE87F" />
+    <corners android:radius="28dp" />
+</shape>

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One lyric line. Long lines wrap inside the sheet instead of running past its
+     rounded edge: the row is constrained to the list width and breaks at words. -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:breakStrategy="balanced"
+    android:hyphenationFrequency="none"
+    android:includeFontPadding="false"
+    android:lineSpacingExtra="2dp"
+    android:paddingStart="2dp"
+    android:paddingTop="10dp"
+    android:paddingEnd="2dp"
+    android:paddingBottom="10dp"
+    android:textColor="@color/text_tertiary"
+    android:textSize="21sp"
+    android:textStyle="bold" />

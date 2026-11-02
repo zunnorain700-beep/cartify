@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Barely-there vignette over the player's translucent artwork mirror: the wash stays
+     bright and colourful like the cover, only the very top and bottom darken enough
+     for the header labels, title and controls to sit on. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:angle="270"
+        android:centerColor="#14040A06"
+        android:endColor="#66040A06"
+        android:startColor="#7A040A06"
+        android:type="linear" />
+</shape>

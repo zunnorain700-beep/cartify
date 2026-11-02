@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Only the update folder is exposed, and only to the installer via a granted uri. -->
+<paths>
+    <cache-path
+        name="updates"
+        path="updates/" />
+</paths>

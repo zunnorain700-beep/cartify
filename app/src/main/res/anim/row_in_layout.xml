@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Applied to a list as its layout animation: each row starts 45 ms after the one
+     above it, giving a short cascade down the screen. -->
+<layoutAnimation xmlns:android="http://schemas.android.com/apk/res/android"
+    android:animation="@anim/row_in"
+    android:animationOrder="normal"
+    android:delay="8%" />

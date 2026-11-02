@@ -1,0 +1,30 @@
+# Gradle / Android build output
+.gradle/
+build/
+app/build/
+local.properties
+externalNativeBuild/
+.cxx/
+*.apk
+*.aab
+*.jks
+*.keystore
+
+# IDE
+.idea/
+*.iml
+
+# Session artifacts (not part of the app)
+build-*.txt
+gh-auth*.txt
+shots/
+bubbles/
+dist/
+preview/
+tts/
+voice_preview/
+tools/*.py
+
+# OS
+.DS_Store
+Thumbs.db

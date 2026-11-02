@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Palette sampled from the Cartify glass logo: near-black green field, deep green
+     glass panels and bright mint highlights. -->
+<resources>
+    <color name="bg">#040A06</color>
+    <color name="bg_deep">#000A02</color>
+    <color name="surface">#071A0D</color>
+    <color name="surface_glass">#12FFFFFF</color>
+    <color name="stroke_glass">#1FFFFFFF</color>
+    <color name="accent">#4CE87F</color>
+    <color name="accent_bright">#8CFFAE</color>
+    <color name="accent_dim">#2E9A54</color>
+    <color name="accent_deep">#043E17</color>
+    <color name="accent_ink">#04170A</color>
+    <color name="text_primary">#EAFFF0</color>
+    <color name="text_secondary">#A3C4AE</color>
+    <color name="text_tertiary">#6E8A77</color>
+    <color name="danger">#E7A6A0</color>
+    <color name="ic_launcher_background">#000A02</color>
+</resources>

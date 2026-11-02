@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_margin="3dp"
+        android:background="@drawable/bg_artwork"
+        android:clipToOutline="true"
+        android:elevation="10dp">
+
+        <ImageView
+            android:id="@+id/pageArt"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:contentDescription="Album artwork"
+            android:scaleType="centerCrop" />
+
+        <ImageView
+            android:id="@+id/pagePlaceholder"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:layout_gravity="center"
+            android:alpha="0.25"
+            android:contentDescription="No artwork"
+            android:src="@drawable/ic_music_note"
+            android:tint="@color/text_secondary" />
+    </FrameLayout>
+</FrameLayout>

@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Rows rise and fade in as a list first appears, so a freshly loaded playlist
+     assembles itself instead of snapping into place all at once. -->
+<set xmlns:android="http://schemas.android.com/apk/res/android"
+    android:interpolator="@android:anim/decelerate_interpolator">
+    <translate
+        android:fromYDelta="8%p"
+        android:toYDelta="0"
+        android:duration="260" />
+    <alpha
+        android:fromAlpha="0"
+        android:toAlpha="1"
+        android:duration="260" />
+</set>

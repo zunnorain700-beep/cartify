@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Backdrop for the floating bottom bar.
+
+  The bar itself is glass, so without something opaque behind it the track list scrolled
+  visibly through it and the two layers fought. This fades the page out under the bar so
+  the tabs always read cleanly.
+
+  Angle 90 runs the gradient bottom-to-top, so startColor is the BOTTOM edge and
+  endColor is the top. The opaque stop therefore belongs at startColor, directly behind
+  the bar, with the fade reaching up into the content. The stops used to be the other way
+  round, which is what put a solid dark band ABOVE the bar and over the page text.
+-->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <gradient
+        android:angle="90"
+        android:startColor="#FF050B07"
+        android:centerColor="#D9050B07"
+        android:endColor="#00050B07" />
+</shape>

@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- One library row: the song's own artwork, blurred, sits behind a light scrim.
+     In selection mode a check badge covers the artwork and the row tints. -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="68dp"
+    android:layout_marginBottom="6dp"
+    android:background="@drawable/bg_glass"
+    android:clipToOutline="true"
+    android:elevation="2dp">
+
+    <ImageView
+        android:id="@+id/songRowBackdrop"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="Row backdrop"
+        android:scaleType="centerCrop" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@drawable/bg_row_scrim" />
+
+    <!-- Shown only while selecting: a mint wash over the whole row. -->
+    <View
+        android:id="@+id/songSelectedTint"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#334CE87F"
+        android:visibility="gone" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="8dp"
+        android:paddingTop="8dp"
+        android:paddingEnd="4dp"
+        android:paddingBottom="8dp">
+
+        <FrameLayout
+            android:layout_width="50dp"
+            android:layout_height="50dp"
+            android:background="@drawable/bg_cover_small">
+
+            <ImageView
+                android:id="@+id/songArt"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:contentDescription="Artwork"
+                android:scaleType="centerCrop" />
+
+            <ImageView
+                android:id="@+id/songCheck"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:background="#66101612"
+                android:contentDescription="Selected"
+                android:padding="13dp"
+                android:src="@drawable/ic_check"
+                android:tint="@color/accent"
+                android:visibility="gone" />
+        </FrameLayout>
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView
+                android:id="@+id/songTitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:shadowColor="#B3000000"
+                android:shadowDx="0"
+                android:shadowDy="1"
+                android:shadowRadius="4"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/songSubtitle"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:shadowColor="#B3000000"
+                android:shadowDx="0"
+                android:shadowDy="1"
+                android:shadowRadius="4"
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <ImageView
+            android:id="@+id/songNow"
+            android:layout_width="20dp"
+            android:layout_height="20dp"
+            android:layout_marginStart="4dp"
+            android:contentDescription="Now playing"
+            android:src="@drawable/ic_music_note"
+            android:tint="@color/accent"
+            android:visibility="gone" />
+
+        <ImageButton
+            android:id="@+id/songMore"
+            android:layout_width="38dp"
+            android:layout_height="38dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="More"
+            android:padding="9dp"
+            android:src="@drawable/ic_more"
+            android:tint="@color/text_secondary" />
+    </LinearLayout>
+</FrameLayout>

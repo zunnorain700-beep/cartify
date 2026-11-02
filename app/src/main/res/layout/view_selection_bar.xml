@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Bulk-action bar that replaces the library header while rows are selected. -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/selectionBar"
+    android:layout_width="match_parent"
+    android:layout_height="54dp"
+    android:layout_marginTop="10dp"
+    android:background="@drawable/bg_glass_strong"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="6dp"
+    android:paddingEnd="6dp"
+    android:visibility="gone">
+
+    <ImageButton
+        android:id="@+id/selectionClose"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Cancel selection"
+        android:padding="10dp"
+        android:src="@drawable/ic_close"
+        android:tint="@color/text_secondary" />
+
+    <TextView
+        android:id="@+id/selectionCount"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="4dp"
+        android:layout_weight="1"
+        android:text="1 selected"
+        android:textColor="@color/text_primary"
+        android:textSize="13sp"
+        android:textStyle="bold" />
+
+    <ImageButton
+        android:id="@+id/selectionSelectAll"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Select all"
+        android:padding="10dp"
+        android:src="@drawable/ic_check"
+        android:tint="@color/accent" />
+
+    <ImageButton
+        android:id="@+id/selectionPlaylist"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Add to playlist"
+        android:padding="10dp"
+        android:src="@drawable/ic_queue"
+        android:tint="@color/accent" />
+
+    <ImageButton
+        android:id="@+id/selectionQueue"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Add to queue"
+        android:padding="10dp"
+        android:src="@drawable/ic_add"
+        android:tint="@color/accent" />
+
+    <ImageButton
+        android:id="@+id/selectionDelete"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:background="?android:attr/selectableItemBackgroundBorderless"
+        android:contentDescription="Delete selected"
+        android:padding="10dp"
+        android:src="@drawable/ic_delete"
+        android:tint="@color/danger" />
+</LinearLayout>
