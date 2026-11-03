@@ -286,6 +286,23 @@
                         android:textStyle="bold" />
                 </LinearLayout>
 
+                <!-- Last few searches, one tap to repeat. -->
+                <HorizontalScrollView
+                    android:id="@+id/recentRow"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:clipToPadding="false"
+                    android:scrollbars="none"
+                    android:visibility="gone">
+
+                    <LinearLayout
+                        android:id="@+id/recentChips"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal" />
+                </HorizontalScrollView>
+
                 <!-- Album-style shelf, the way Spotify home leads with artwork. -->
                 <TextView
                     android:id="@+id/recHeader"

@@ -17,6 +17,7 @@ import android.view.View;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.HorizontalScrollView;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -71,6 +72,8 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
     private RecyclerView recRail;
     private CardAdapter cardAdapter;
     private TextView recHeader;
+    private HorizontalScrollView recentRow;
+    private LinearLayout recentChips;
     private LinearLayout emptyState;
 
     private LinearLayout homeView;
@@ -157,6 +160,7 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         main.post(miniTicker);
         playIntro();
         checkForUpdates();
+        renderRecentSearches();
         loadRecommendations();
     }
 
@@ -379,6 +383,8 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
                 startDownload(one);
             });
             recRail.setAdapter(cardAdapter);
+        recentRow = findViewById(R.id.recentRow);
+        recentChips = findViewById(R.id.recentChips);
         }
         emptyState = findViewById(R.id.emptyState);
 
@@ -761,6 +767,46 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
      * tap a search result uses. Loaded once per launch and only when the list is empty, so
      * it never overwrites something the user just searched for.
      */
+    /**
+     * Shows the stored searches as tappable chips under the search box.
+     *
+     * Rebuilt from scratch each time: the list is at most eight entries, so recycling
+     * views would cost more code than it saves.
+     */
+    private void renderRecentSearches() {
+        if (recentRow == null || recentChips == null) return;
+        recentChips.removeAllViews();
+        List<String> terms = SearchHistory.all(this);
+        if (terms.isEmpty()) {
+            recentRow.setVisibility(View.GONE);
+            return;
+        }
+        recentRow.setVisibility(View.VISIBLE);
+        float d = getResources().getDisplayMetrics().density;
+        for (String term : terms) {
+            TextView chip = new TextView(this);
+            chip.setText(term);
+            chip.setTextSize(12f);
+            chip.setTextColor(getColor(R.color.text_primary));
+            chip.setBackgroundResource(R.drawable.bg_chip);
+            int padH = (int) (12 * d), padV = (int) (7 * d);
+            chip.setPadding(padH, padV, padH, padV);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                    LinearLayout.LayoutParams.WRAP_CONTENT,
+                    LinearLayout.LayoutParams.WRAP_CONTENT);
+            lp.rightMargin = (int) (8 * d);
+            chip.setLayoutParams(lp);
+            chip.setOnClickListener(v -> {
+                EditText box = findViewById(R.id.searchInput);
+                if (box == null) return;
+                box.setText(term);
+                box.setSelection(box.getText().length());
+                runSearch(box);
+            });
+            recentChips.addView(chip);
+        }
+    }
+
     private void loadRecommendations() {
         if (adapter == null || adapter.getItemCount() > 0) return;
         MusicSearch.recommendations(new MusicSearch.Callback() {
@@ -796,6 +842,7 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         hideKeyboard();
         // Remembered before the request so a failed search is still one tap to retry.
         SearchHistory.remember(this, query);
+        renderRecentSearches();
         setBusy(true, "Searching for " + query + "...");
         MusicSearch.search(query, new MusicSearch.Callback() {
             @Override
