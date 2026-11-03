@@ -576,6 +576,19 @@
                         android:textSize="12sp" />
 
                     <TextView
+                        android:id="@+id/playlistsSort"
+                        android:layout_width="wrap_content"
+                        android:layout_height="30dp"
+                        android:layout_marginEnd="8dp"
+                        android:background="@drawable/bg_chip"
+                        android:gravity="center"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:text="Newest"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp" />
+
+                    <TextView
                         android:id="@+id/newPlaylistButton"
                         android:layout_width="wrap_content"
                         android:layout_height="30dp"

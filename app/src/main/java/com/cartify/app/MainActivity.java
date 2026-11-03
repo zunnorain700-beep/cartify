@@ -80,6 +80,9 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
     private LinearLayout libraryView;
     private LinearLayout playlistsView;
     private TextView playlistsStatus;
+    /** Which order the playlist shelf is in; see {@link #sortPlaylists}. */
+    private int playlistsSortMode = 0;
+    private TextView playlistsSort;
     private RecyclerView playlistsList;
     private LinearLayout playlistsEmpty;
     private PlaylistAdapter playlistAdapter;
@@ -469,6 +472,10 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
 
         playlistsView = findViewById(R.id.playlistsView);
         playlistsStatus = findViewById(R.id.playlistsStatus);
+        playlistsSort = findViewById(R.id.playlistsSort);
+        if (playlistsSort != null) {
+            playlistsSort.setOnClickListener(v -> cyclePlaylistSort());
+        }
         playlistsList = findViewById(R.id.playlistsList);
         playlistsEmpty = findViewById(R.id.playlistsEmpty);
 
@@ -707,10 +714,51 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
     private void refreshPlaylists() {
         if (playlistAdapter == null) return;
         List<Playlist> lists = PlaylistStore.all(this);
+        sortPlaylists(lists);
         playlistAdapter.submit(lists);
         boolean empty = lists.isEmpty();
         playlistsEmpty.setVisibility(empty ? View.VISIBLE : View.GONE);
         playlistsStatus.setText(empty ? "Make a playlist" : lists.size() + (lists.size() == 1 ? " playlist" : " playlists"));
+        if (playlistsSort != null) {
+            playlistsSort.setVisibility(empty ? View.GONE : View.VISIBLE);
+        }
+    }
+
+    /**
+     * Orders the playlist shelf.
+     *
+     * 0 Newest, 1 Name, 2 Song count, 3 Recently updated. The store returns insertion
+     * order, which is not a decision the user made, so every mode sorts explicitly and
+     * the list never depends on the order the files happen to be read in.
+     */
+    private void sortPlaylists(List<Playlist> lists) {
+        switch (playlistsSortMode) {
+            case 1:
+                lists.sort((a, b) -> String.CASE_INSENSITIVE_ORDER.compare(
+                        a.name == null ? "" : a.name, b.name == null ? "" : b.name));
+                break;
+            case 2:
+                lists.sort((a, b) -> Integer.compare(b.songs.size(), a.songs.size()));
+                break;
+            case 3:
+                lists.sort((a, b) -> Long.compare(b.updatedAt, a.updatedAt));
+                break;
+            default:
+                lists.sort((a, b) -> Long.compare(b.createdAt, a.createdAt));
+                break;
+        }
+    }
+
+    /** Cycles Newest -> Name -> Songs -> Updated -> Newest. */
+    private void cyclePlaylistSort() {
+        playlistsSortMode = (playlistsSortMode + 1) % 4;
+        if (playlistsSort != null) {
+            playlistsSort.setText(new String[]{"Newest", "Name", "Songs", "Updated"}[playlistsSortMode]);
+            playlistsSort.setTextColor(getColor(R.color.accent));
+            playlistsSort.setAlpha(0.6f);
+            playlistsSort.animate().alpha(1f).setDuration(220).start();
+        }
+        refreshPlaylists();
     }
 
     private void createPlaylist() {
