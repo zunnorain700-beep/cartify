@@ -162,6 +162,14 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         wireActions();
         setupLists();
 
+        // Spotify throttles a device that resolves links in bursts. When it does, the
+        // status line says so and counts down instead of the button appearing to do
+        // nothing while the resolver sleeps.
+        SpotifyResolver.setWaiter(seconds -> main.post(() -> {
+            if (!isFinishing()) {
+                statusText.setText("Spotify is busy \u2014 retrying in " + seconds + "s");
+            }
+        }));
         ProgressBus.register(this);
         // A download may have started before this activity existed (or kept running while
         // the app was in the background), so pick up its live state immediately.

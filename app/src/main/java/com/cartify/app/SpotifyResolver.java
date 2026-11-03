@@ -293,13 +293,41 @@ public final class SpotifyResolver {
     private static long lastRequestAt = 0L;
     /** Set when Spotify has told us to back off; cleared by a successful request. */
     private static volatile long coolDownUntil = 0L;
+    /**
+     * How many 429s in a row this process has seen.
+     *
+     * Spotify does not simply resume after one Retry-After: a device that keeps
+     * knocking while blocked gets blocked for longer, and every retry resets the
+     * clock. Backing off further each time (5s, 10s, 20s, capped) is what lets a
+     * blocked session actually recover instead of extending its own punishment.
+     */
+    private static int blockStreak = 0;
+    /** Notified when a request has to wait, so the UI can say why. */
+    public interface Waiter {
+        void onWaiting(int secondsLeft);
+    }
+    private static volatile Waiter waiter;
+
+    public static void setWaiter(Waiter w) {
+        waiter = w;
+    }
+
+    /** Seconds still to wait before Spotify is likely to answer, 0 when clear. */
+    public static int cooldownSecondsLeft() {
+        long left = coolDownUntil - System.currentTimeMillis();
+        return left <= 0 ? 0 : (int) Math.ceil(left / 1000.0);
+    }
 
     private static void awaitTurn() throws InterruptedException {
         synchronized (GATE) {
             long now = System.currentTimeMillis();
             long wakeAt = Math.max(now, Math.max(lastRequestAt + MIN_GAP_MS, coolDownUntil));
             long wait = wakeAt - now;
-            if (wait > 0) Thread.sleep(Math.min(wait, 30000L));
+            if (wait > 0) {
+                Waiter w = waiter;
+                if (w != null) w.onWaiting((int) Math.ceil(wait / 1000.0));
+                Thread.sleep(Math.min(wait, 30000L));
+            }
             lastRequestAt = System.currentTimeMillis();
         }
     }
@@ -316,8 +344,14 @@ public final class SpotifyResolver {
             if (retryAfter != null) seconds = Math.max(1L, Long.parseLong(retryAfter.trim()));
         } catch (Exception ignored) {
         }
+        // Escalate while the block persists. The header says when the next request
+        // may be tried, not when the block lifts; waiting longer each round is what
+        // ends the block instead of refreshing it.
+        blockStreak = Math.min(blockStreak + 1, 6);
+        long escalate = seconds * (1L << Math.min(blockStreak - 1, 3));
+        seconds = Math.max(seconds, escalate);
         // Cap it: a misreported header should not freeze the screen for an hour.
-        seconds = Math.min(seconds, 60L);
+        seconds = Math.min(seconds, 120L);
         coolDownUntil = System.currentTimeMillis() + seconds * 1000L;
     }
 
@@ -386,6 +420,7 @@ public final class SpotifyResolver {
                         "Spotify is rate limiting this device. Wait a moment and try again.");
             }
             coolDownUntil = 0L;
+            blockStreak = 0;
             InputStream raw = code >= 400 ? c.getErrorStream() : c.getInputStream();
             if (raw == null) throw new IllegalStateException("Spotify replied HTTP " + code);
             boolean gz = "gzip".equalsIgnoreCase(c.getContentEncoding());
