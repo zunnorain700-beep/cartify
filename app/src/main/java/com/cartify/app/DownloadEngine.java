@@ -517,7 +517,60 @@ public final class DownloadEngine {
      * title words, artist words, duration and explicit variant tags all count, and a
      * candidate that does not clear the bar is rejected rather than guessed at.
      */
+    /**
+     * Finds a match, trying progressively looser searches.
+     *
+     * The full "title artist" query is the most precise thing to ask for, but it is also
+     * the most fragile: one misspelled word from Spotify ("Dhoom Majale" for "Dhoom
+     * Machale") makes YouTube return nothing relevant at all, and the track then fails
+     * as if the song did not exist. Dropping the artist, then trimming to the first few
+     * title words, keeps a search in play when the exact string does not.
+     */
     private static String pickCandidate(String query, Track track, Task task) throws Failure {
+        try {
+            return pickCandidateOnce(query, track, task);
+        } catch (Failure first) {
+            if (!"search".equals(first.stage)) throw first;
+            for (String relaxed : relaxedQueries(track, query)) {
+                if (relaxed.equalsIgnoreCase(query) || relaxed.trim().isEmpty()) continue;
+                task.check();
+                try {
+                    Log.i(TAG, "retrying search with \"" + relaxed + "\"");
+                    return pickCandidateOnce(relaxed, track, task);
+                } catch (Failure again) {
+                    if (!"search".equals(again.stage)) throw again;
+                }
+            }
+            throw first;
+        }
+    }
+
+    /**
+     * Looser versions of the query, most specific first.
+     *
+     * Only the parts that are safe to drop are dropped: the artist, and any word past the
+     * fourth, because a long title is usually a long title plus its release notes. The
+     * song name itself is never shortened below three words, which would turn "Dhoom
+     * Majale Dhoom" into "Dhoom" and match anything.
+     */
+    private static java.util.List<String> relaxedQueries(Track track, String query) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        String title = track == null ? "" : stripQualifiers(track.title);
+        if (title.trim().isEmpty()) title = stripQualifiers(query);
+        if (!title.trim().isEmpty()) out.add(title.trim());
+        String[] words = title.trim().split("\\s+");
+        if (words.length > 4) {
+            StringBuilder head = new StringBuilder();
+            for (int i = 0; i < 4; i++) {
+                if (head.length() > 0) head.append(" ");
+                head.append(words[i]);
+            }
+            out.add(head.toString());
+        }
+        return out;
+    }
+
+    private static String pickCandidateOnce(String query, Track track, Task task) throws Failure {
         long expected = track == null ? 0L : track.durationMs;
         // Spotify titles carry catalogue qualifiers that no upload repeats: "Deva Deva
         // (From \"Brahmastra\")" is the song "Deva Deva". Leaving them in made the wanted
