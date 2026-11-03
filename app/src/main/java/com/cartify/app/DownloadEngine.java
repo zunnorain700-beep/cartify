@@ -764,7 +764,13 @@ public final class DownloadEngine {
 
         // Reported separately so the caller can tell "this is the song but the length is
         // off" from "this may not be the song at all".
-        if (parts != null && parts.length > 1) parts[1] = titleScore + artistScore;
+        //
+        // A variant marker the user did not ask for zeroes the identity too, not just
+        // the total. Identity is what the caller trusts over length, so leaving it
+        // intact would let "Song (Live at Glastonbury)" with the right title and
+        // artist clear the shortcut and be saved as the studio recording - exactly
+        // the mistake the scoring exists to prevent.
+        int identity = titleScore + artistScore;
 
         int score = durScore + titleScore + artistScore;
 
@@ -783,6 +789,7 @@ public final class DownloadEngine {
                     || marker.equals("traducao") || marker.equals("letra")
                     || marker.equals("paroles") || marker.equals("subtitulado");
             score -= packagingOnly ? 22 : 40;
+            if (!packagingOnly) identity = 0;
         }
 
         // Official sources are the ones that carry the master audio. A Topic channel is
@@ -794,6 +801,7 @@ public final class DownloadEngine {
         if (official) score += 12;
         if (title.contains("official audio")) score += 4;
 
+        if (parts != null && parts.length > 1) parts[1] = identity;
         if (parts != null && parts.length > 0) parts[0] = score;
         return score;
     }
