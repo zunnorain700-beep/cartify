@@ -245,7 +245,31 @@ public final class MusicSearch {
 
     // ------------------------------------------------------------------ http
 
-    private static String httpGet(String url) throws Exception {
+        /**
+     * Turns a network exception into something a person can act on.
+     *
+     * The raw text was shown verbatim: "unable to resolve host api.deezer.com: no
+     * address associated with hostname" is true, and useless to anyone holding a
+     * phone with no signal. The common cases are named; anything else keeps the
+     * original wording so a real bug is still reportable.
+     */
+    private static String explain(Throwable e) {
+        String msg = e == null ? "" : String.valueOf(e.getMessage());
+        String low = msg.toLowerCase(java.util.Locale.US);
+        if (low.contains("unable to resolve host") || low.contains("unknownhost")
+                || low.contains("no address associated")) {
+            return "No internet connection";
+        }
+        if (low.contains("timed out") || low.contains("timeout")) {
+            return "The connection timed out";
+        }
+        if (low.contains("econnrefused") || low.contains("connection refused")) {
+            return "The music service refused the request";
+        }
+        return msg.isEmpty() ? "Could not reach the music service" : msg;
+    }
+
+private static String httpGet(String url) throws Exception {
         HttpURLConnection c = null;
         try {
             c = (HttpURLConnection) new URL(url).openConnection();
@@ -269,7 +293,9 @@ public final class MusicSearch {
 
     private static String describe(Throwable e) {
         String m = e.getMessage();
-        return m == null || m.trim().isEmpty() ? e.getClass().getSimpleName()
-                : m.toLowerCase(Locale.US).trim();
+        if (m == null || m.trim().isEmpty()) return e.getClass().getSimpleName();
+        // explain() names the cases a person can act on (no signal, timeout) and
+        // passes anything else through untouched, so a genuine bug is still legible.
+        return explain(e);
     }
 }
