@@ -35,6 +35,90 @@ public final class Art {
             return value.getByteCount();
         }
     };
+    /**
+     * Covers kept on disk, keyed by the artwork url.
+     *
+     * The memory cache is wiped by every process death, so each launch re-downloaded the
+     * same few hundred covers: slow first scroll, and real data spent on bytes already
+     * seen. Files land in the app cache dir, so the system can reclaim them and the user
+     * never sees an uninstall-only leftover. Bounded by count and pruned oldest-first.
+     */
+    private static final int DISK_MAX = 400;
+    private static final java.util.concurrent.atomic.AtomicBoolean DISK_READY =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+    private static java.io.File diskDir;
+
+    private static java.io.File diskFile(Context context, String key) {
+        if (context == null || key == null || key.isEmpty()) return null;
+        if (!DISK_READY.getAndSet(true)) {
+            diskDir = new java.io.File(context.getApplicationContext().getCacheDir(), "artwork");
+            if (!diskDir.exists()) {
+                //noinspection ResultOfMethodCallIgnored
+                diskDir.mkdirs();
+            }
+            trimDisk();
+        }
+        if (diskDir == null) return null;
+        return new java.io.File(diskDir, sha1(key) + ".img");
+    }
+
+    private static String sha1(String value) {
+        try {
+            java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-1");
+            byte[] digest = md.digest(value.getBytes("UTF-8"));
+            StringBuilder sb = new StringBuilder(digest.length * 2);
+            for (byte b : digest) sb.append(String.format("%02x", b));
+            return sb.toString();
+        } catch (Exception e) {
+            return String.valueOf(value.hashCode());
+        }
+    }
+
+    /** Keeps the newest DISK_MAX files; a stale cover is one download away. */
+    private static void trimDisk() {
+        try {
+            java.io.File[] files = diskDir.listFiles();
+            if (files == null || files.length <= DISK_MAX) return;
+            java.util.Arrays.sort(files, (a, b) -> Long.compare(a.lastModified(), b.lastModified()));
+            for (int i = 0; i < files.length - DISK_MAX; i++) {
+                //noinspection ResultOfMethodCallIgnored
+                files[i].delete();
+            }
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private static Bitmap readDisk(Context context, String key) {
+        java.io.File f = diskFile(context, key);
+        if (f == null || !f.exists()) return null;
+        try {
+            Bitmap b = android.graphics.BitmapFactory.decodeFile(f.getAbsolutePath());
+            // Touching the file keeps a cover the user actually looks at from ageing out.
+            if (b != null) f.setLastModified(System.currentTimeMillis());
+            return b;
+        } catch (Throwable e) {
+            return null;
+        }
+    }
+
+    private static void writeDisk(Context context, String key, Bitmap bitmap) {
+        if (bitmap == null) return;
+        java.io.File f = diskFile(context, key);
+        if (f == null) return;
+        java.io.File tmp = new java.io.File(f.getAbsolutePath() + ".tmp");
+        try (java.io.FileOutputStream out = new java.io.FileOutputStream(tmp)) {
+            // Covers are shown at a few hundred pixels; re-encoding at full resolution
+            // filled the cache with 1 MB PNGs for 300 px thumbnails.
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, out);
+        } catch (Throwable e) {
+            //noinspection ResultOfMethodCallIgnored
+            tmp.delete();
+            return;
+        }
+        //noinspection ResultOfMethodCallIgnored
+        tmp.renameTo(f);
+    }
+
     private static final Set<String> IN_FLIGHT = new HashSet<>();
     /**
      * Artwork keys that produced no bitmap.
@@ -143,9 +227,18 @@ public final class Art {
         final String url = track.coverUrl;
         final String uri = track.localUri;
         POOL.execute(() -> {
-            Bitmap b = null;
-            if (url != null && !url.isEmpty()) b = Net.bitmap(url);
-            if (b == null && uri != null && !uri.isEmpty()) b = embedded(app, uri);
+            // Disk before network: a cover that was already downloaded once is free
+            // the second time, which is what makes the library scroll smoothly on a
+            // cold start instead of waiting on a few hundred HTTP requests.
+            Bitmap b = readDisk(app, k);
+            if (b == null && url != null && !url.isEmpty()) {
+                b = Net.bitmap(url);
+                if (b != null) writeDisk(app, k, b);
+            }
+            if (b == null && uri != null && !uri.isEmpty()) {
+                b = embedded(app, uri);
+                if (b != null) writeDisk(app, k, b);
+            }
             final Bitmap result = b;
             List<ImageView> targets;
             synchronized (WAITING) {

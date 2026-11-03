@@ -38,7 +38,7 @@ Working list for the 3 November 2026 session. Ordered by value, not by effort.
 - [x] Remember the last scroll position per tab
 - [ ] Artist grouping in the library
 
-## Ideas worth evaluating
+- [x] Cache artwork on disk so a restart does not re-download every cover`n`n## Ideas worth evaluating
 
 - Replace the whole-library MediaStore rescan with an incremental insert per finished track
 - Cache lyrics to disk so a replayed song does not hit the network again
