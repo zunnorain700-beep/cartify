@@ -56,6 +56,21 @@ public final class Playback {
     private long pendingSeek = -1;
     private String source = "";
 
+    /**
+     * Audio focus, so a call or another player can take the speakers away.
+     *
+     * Nothing asked for focus before: music kept playing over an incoming call and
+     * over a video started in another app, which is the single most obvious way a
+     * player can behave badly. A loss pauses; a short duck lowers the volume and
+     * restores it rather than stopping mid-song.
+     */
+    private android.media.AudioManager audioManager;
+    private android.media.AudioManager.OnAudioFocusChangeListener focusListener;
+    private boolean resumeOnFocusGain;
+    /** Set when we paused ourselves, so a focus gain does not fight the user. */
+    private boolean pausedByFocus;
+    private boolean hasFocus;
+
     private Playback(Context context) {
         this.app = context;
         // Shuffle and repeat are habits, not per-session choices: someone who listens on
@@ -212,6 +227,11 @@ public final class Playback {
                     pendingSeek = -1;
                 }
                 if (playWhenReady) {
+                    // Focus is requested here, not only from the play button: a queue
+                    // started from a playlist, an auto-advance or a resumed notification
+                    // all reach playback through this listener and none of them used to
+                    // ask for focus, so a call could not pause the music.
+                    requestFocus();
                     m.start();
                     ensureService();
                 }
@@ -266,7 +286,13 @@ public final class Playback {
             if (player.isPlaying()) {
                 player.pause();
                 playWhenReady = false;
+                abandonFocus();
             } else {
+                if (!requestFocus()) {
+                    // Refused, but playback still proceeds: focus is a courtesy to
+                    // other apps, not a lock on the speakers.
+                    Log.w(TAG, "audio focus refused");
+                }
                 player.start();
                 playWhenReady = true;
                 ensureService();
@@ -291,7 +317,32 @@ public final class Playback {
     public void pause() {
         if (player != null && isPlaying()) {
             player.pause();
+            pausedByFocus = false;
             notifyPlayback();
+        }
+    }
+
+    /** Pause without telling the focus logic that the user asked for it. */
+    private void pauseInternal() {
+        try {
+            if (player != null && player.isPlaying()) {
+                player.pause();
+                playWhenReady = false;
+            }
+        } catch (IllegalStateException e) {
+            Log.w(TAG, "focus pause ignored while re-binding", e);
+        }
+    }
+
+    /** Resume after a transient focus loss, without asking for focus again. */
+    private void startInternal() {
+        try {
+            if (player != null && !loading) {
+                player.start();
+                playWhenReady = true;
+            }
+        } catch (IllegalStateException e) {
+            Log.w(TAG, "focus resume ignored while re-binding", e);
         }
     }
 
@@ -472,6 +523,94 @@ public final class Playback {
         Collections.shuffle(order);
         if (keep >= 0 && keep < queue.size()) order.add(0, keep);
         shufflePos = 0;
+    }
+
+    // ------------------------------------------------------------------ focus
+
+    private boolean requestFocus() {
+        try {
+            if (audioManager == null) {
+                audioManager = (android.media.AudioManager)
+                        app.getSystemService(Context.AUDIO_SERVICE);
+            }
+            if (audioManager == null) return true;
+            if (focusListener == null) {
+                focusListener = change -> main.post(() -> onFocusChange(change));
+            }
+            int result = audioManager.requestAudioFocus(focusListener,
+                    android.media.AudioManager.STREAM_MUSIC,
+                    android.media.AudioManager.AUDIOFOCUS_GAIN);
+            hasFocus = result == android.media.AudioManager.AUDIOFOCUS_REQUEST_GRANTED;
+            // Logged so a "music kept playing during a call" report can be answered:
+            // a granted focus means the platform will deliver the loss, a refused one
+            // means another app holds audio and nothing will arrive.
+            Log.i(TAG, "audio focus " + (hasFocus ? "granted" : "refused"));
+            // A refused request is not a reason to refuse to play: some devices and
+            // some focus-holding apps never release it, and silently not playing at
+            // all would be worse than playing over them.
+            return true;
+        } catch (Throwable e) {
+            Log.w(TAG, "audio focus request failed", e);
+            return true;
+        }
+    }
+
+    private void abandonFocus() {
+        try {
+            if (audioManager != null && focusListener != null) {
+                audioManager.abandonAudioFocus(focusListener);
+            }
+            hasFocus = false;
+        } catch (Throwable ignored) {
+        }
+    }
+
+    private void onFocusChange(int change) {
+        switch (change) {
+            case android.media.AudioManager.AUDIOFOCUS_LOSS:
+                // Permanent: another player owns audio now. Stop and do not resume
+                // by ourselves when it comes back.
+                resumeOnFocusGain = false;
+                if (isPlaying()) {
+                    pausedByFocus = true;
+                    pauseInternal();
+                }
+                hasFocus = false;
+                break;
+            case android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT:
+                resumeOnFocusGain = isPlaying();
+                if (isPlaying()) {
+                    pausedByFocus = true;
+                    pauseInternal();
+                }
+                break;
+            case android.media.AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK:
+                // A notification sound should not stop the song, just lower it.
+                if (player != null) {
+                    try {
+                        player.setVolume(0.2f, 0.2f);
+                    } catch (Throwable ignored) {
+                    }
+                }
+                break;
+            case android.media.AudioManager.AUDIOFOCUS_GAIN:
+                hasFocus = true;
+                if (player != null) {
+                    try {
+                        player.setVolume(1f, 1f);
+                    } catch (Throwable ignored) {
+                    }
+                }
+                if (resumeOnFocusGain && pausedByFocus) {
+                    resumeOnFocusGain = false;
+                    pausedByFocus = false;
+                    startInternal();
+                }
+                break;
+            default:
+                break;
+        }
+        notifyPlayback();
     }
 
     // ------------------------------------------------------------------ service
