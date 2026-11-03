@@ -199,6 +199,9 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
                     refreshLibrary();
                     toast("Rescanning Music/Cartify");
                 }));
+        items.add(new MenuSheet.Item(R.drawable.ic_music_note,
+                "Download quality \u00b7 " + DownloadQuality.labelFor(DownloadQuality.get(this)),
+                this::showQualityPicker));
         if (!playback.queue().isEmpty()) {
             items.add(new MenuSheet.Item(R.drawable.ic_close, "Clear play queue", () -> {
                 playback.clearQueue();
@@ -249,6 +252,30 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
                         }));
             });
         });
+    }
+
+    /**
+     * Lets the user choose the MP3 quality used by the next download.
+     *
+     * Every level is one tap and the menu closes immediately: a settings screen would be
+     * more machinery than five exclusive options warrant, and the current choice is already
+     * shown in the subtitle.
+     */
+    private void showQualityPicker() {
+        String current = DownloadQuality.get(this);
+        List<MenuSheet.Item> items = new ArrayList<>();
+        for (DownloadQuality.Level level : DownloadQuality.LEVELS) {
+            boolean picked = level.id.equals(current);
+            items.add(new MenuSheet.Item(R.drawable.ic_music_note,
+                    level.label + (picked ? "  \u00b7  current" : ""),
+                    () -> {
+                        DownloadQuality.set(this, level.id);
+                        toast("Downloads will be " + level.label);
+                    }));
+        }
+        MenuSheet.show(this, "Download quality",
+                DownloadQuality.labelFor(current) + " \u00b7 applies to new downloads",
+                items.toArray(new MenuSheet.Item[0]));
     }
 
     /**

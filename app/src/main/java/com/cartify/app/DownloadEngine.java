@@ -365,7 +365,9 @@ public final class DownloadEngine {
         // V0 is LAME's best variable-bitrate preset (~245 kbps) and the least lossy MP3
         // this pipeline can produce. It used to be V5 (~130 kbps), which threw away
         // detail on top of the loss the source already carries.
-        request.addOption("--audio-quality", "0");
+        // The level comes from the user setting, which defaults to V0 (the old hardcoded
+        // behaviour). 320 and 192 are constant-bitrate ids that yt-dlp accepts directly.
+        request.addOption("--audio-quality", DownloadQuality.get(context));
 
         // ---------------------------------------------------------------- slow links
         //

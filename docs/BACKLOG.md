@@ -23,7 +23,7 @@ Working list for the 3 November 2026 session. Ordered by value, not by effort.
 
 ## Next, highest value first
 
-- [ ] Per-track download quality choice (V0 / 320 / 192 / 128)
+- [x] Per-track download quality choice (V0 / 320 / 192 / 128)
 - [ ] Save the shuffle and repeat choice across app restarts
 - [x] In-app search (Deezer + iTunes) with ranked results
 - [x] Recommended music shelf on the search home
@@ -31,7 +31,7 @@ Working list for the 3 November 2026 session. Ordered by value, not by effort.
 - [x] Search becomes the home tab; library renamed Offline
 - [ ] Search inside playlists, not just the library
 - [ ] Sort playlists by name or song count
-- [ ] Show download progress percentage on the notification title, not just text
+- [x] Show download progress percentage on the notification title, not just text
 - [x] Export a playlist as an .m3u file next to the MP3s
 - [ ] Undo for a single-song delete (keep the file for ten seconds)
 - [ ] Warn before deleting a song that is inside playlists
