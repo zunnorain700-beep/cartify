@@ -295,6 +295,7 @@ public class PlaylistActivity extends AppCompatActivity implements Playback.List
 
     @Override
     protected void onDestroy() {
+        io.shutdownNow();
         playback.removeListener(this);
         super.onDestroy();
     }

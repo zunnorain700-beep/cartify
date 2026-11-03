@@ -747,6 +747,7 @@ public class PlayerActivity extends AppCompatActivity implements Playback.Listen
 
     @Override
     protected void onDestroy() {
+        if (io != null) io.shutdownNow();
         main.removeCallbacks(ticker);
         playback.removeListener(this);
         if (seekThumb != null) seekThumb.release();

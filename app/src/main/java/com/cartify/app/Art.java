@@ -36,7 +36,22 @@ public final class Art {
         }
     };
     private static final Set<String> IN_FLIGHT = new HashSet<>();
-    private static final Set<String> MISSING = new HashSet<>();
+    /**
+     * Artwork keys that produced no bitmap.
+     *
+     * Bounded: this used to grow for the life of the process, and every song without
+     * embedded art (or with a dead cover URL) added an entry that was never removed. On a
+     * device with a large library that is a slow, permanent leak. The cap is far above the
+     * number of covers on screen, so a miss is still remembered for as long as it matters.
+     */
+    private static final int MISSING_MAX = 600;
+    private static final Set<String> MISSING = java.util.Collections.newSetFromMap(
+            new java.util.LinkedHashMap<String, Boolean>(64, 0.75f, true) {
+                @Override
+                protected boolean removeEldestEntry(java.util.Map.Entry<String, Boolean> eldest) {
+                    return size() > MISSING_MAX;
+                }
+            });
     private static final Map<String, List<ImageView>> WAITING = new HashMap<>();
     private static final ExecutorService POOL = Executors.newFixedThreadPool(3);
     private static final Handler MAIN = new Handler(Looper.getMainLooper());

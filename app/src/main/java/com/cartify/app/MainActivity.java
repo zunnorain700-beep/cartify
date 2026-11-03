@@ -1461,6 +1461,9 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
 
     @Override
     protected void onDestroy() {
+        // This pool belongs to the activity, not the process. Leaving it running meant
+        // every rotation or return to the app leaked one thread for good.
+        io.shutdownNow();
         ProgressBus.unregister(this);
         playback.removeListener(this);
         main.removeCallbacks(miniTicker);
