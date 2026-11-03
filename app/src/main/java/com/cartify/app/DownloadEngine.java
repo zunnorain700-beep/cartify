@@ -557,10 +557,15 @@ public final class DownloadEngine {
         // A score below this means nothing in the results looked like the track. Saying so
         // is better than saving the wrong song under the right name.
         if (bestUrl.isEmpty() || bestScore < MIN_ACCEPT_SCORE) {
+            // A silent rejection is indistinguishable from a broken downloader when the
+            // user sees a failed row. Recording the query, the best candidate and its
+            // score makes every failure explainable from the log alone.
+            Log.w(TAG, "rejected match: query=\"" + query + "\" bestScore=" + bestScore
+                    + " best=\"" + bestTitle + "\" expected=" + expected + "ms");
             throw new Failure("search", bestUrl.isEmpty()
                     ? "No match found for this song"
                     : "Only a different recording of \"" + (track == null ? query : track.title)
-                      + "\" was found");
+                      + "\" was found (best match \"" + bestTitle + "\")");
         }
         return bestUrl;
     }
