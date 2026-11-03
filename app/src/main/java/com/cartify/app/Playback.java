@@ -234,6 +234,10 @@ public final class Playback {
                     requestFocus();
                     m.start();
                     ensureService();
+                    // Every play path - row, shuffle, auto-advance, notification -
+                    // reaches playback through this listener, so recording here is
+                    // the only place that keeps the history complete.
+                    Recent.remember(app, t.localUri);
                 }
                 notifyPlayback();
             });

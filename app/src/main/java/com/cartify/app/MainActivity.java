@@ -203,7 +203,9 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         checkForUpdates();
         renderRecentSearches();
         showGreeting();
-        loadRecommendations();
+        // Recently played first, chart only as a fallback. Both fill the same rows
+        // and whichever runs first wins, so this order is the decision.
+        loadRecentlyPlayed();
     }
 
     // ---------------------------------------------------------------- updates
@@ -1030,6 +1032,48 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
             }
         });
     }
+    /**
+     * Fills the home rows with the songs actually played last.
+     *
+     * This is the difference between an app that opens on a stranger's playlist and one
+     * that opens on your own listening. Only songs still in the library are shown, so a
+     * deleted file never leaves a row that cannot play, and the chart is only requested
+     * when there is no history to show.
+     */
+    private void loadRecentlyPlayed() {
+        final List<String> uris = Recent.all(this);
+        if (uris.isEmpty()) {
+            loadRecommendations();
+            return;
+        }
+        io.execute(() -> {
+            List<LibraryStore.Item> raw = LibraryStore.query(this);
+            List<Track> out = new ArrayList<>();
+            for (String uri : uris) {
+                for (LibraryStore.Item it : raw) {
+                    if (uri.equals(it.uri)) {
+                        out.add(it.toTrack());
+                        break;
+                    }
+                }
+            }
+            final List<Track> found = out;
+            main.post(() -> {
+                if (isFinishing() || adapter.getItemCount() > 0) return;
+                if (found.isEmpty()) {
+                    loadRecommendations();
+                    return;
+                }
+                SpotifyCollection recent = new SpotifyCollection();
+                recent.name = "Recently played";
+                recent.type = "search";
+                recent.tracks.addAll(found);
+                showCollection(recent);
+                setBusy(false, "Recently played \u00b7 tap Download");
+            });
+        });
+    }
+
     private void loadRecommendations() {
         if (adapter == null || adapter.getItemCount() > 0) return;
         MusicSearch.recommendations(new MusicSearch.Callback() {
