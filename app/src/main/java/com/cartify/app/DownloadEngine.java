@@ -522,7 +522,11 @@ public final class DownloadEngine {
         // Spotify titles carry catalogue qualifiers that no upload repeats: "Deva Deva
         // (From \"Brahmastra\")" is the song "Deva Deva". Leaving them in made the wanted
         // title look only 75% present in a correctly named upload, which cost real matches.
-        String wantTitle = stripQualifiers(normalise(track == null ? query : track.title));
+        // Order matters: normalise() deletes every bracket, so stripping the qualifier
+        // afterwards could never match and "(From \"Brahmastra\")" stayed in the
+        // wanted title. That made a correct upload look like a partial title match
+        // (identity 33 instead of 50) and got "Deva Deva" rejected.
+        String wantTitle = normalise(stripQualifiers(track == null ? query : track.title));
         String wantArtist = normalise(track == null ? "" : track.artist);
         String wantAlbum = normalise(track == null ? "" : track.album);
 
@@ -753,7 +757,8 @@ public final class DownloadEngine {
     private static String stripQualifiers(String title) {
         if (title == null || title.isEmpty()) return "";
         String out = title.trim();
-        java.util.regex.Pattern tail = java.util.regex.Pattern.compile("\\s*[\\[\\(][^\\[\\(\\)\\]]*[\\]\\)]\\s*$");
+        java.util.regex.Pattern tail = java.util.regex.Pattern
+                .compile("\\s*[\\[\\(][^\\[\\(\\)\\]]*[\\]\\)]\\s*$");
         // Repeat: "Track (Live) (Deluxe)" should lose both groups.
         for (int guard = 0; guard < 3; guard++) {
             String next = tail.matcher(out).replaceAll("").trim();
