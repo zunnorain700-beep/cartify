@@ -89,11 +89,14 @@ public final class SpotifyResolver {
         JSONObject next = extractNextData(html);
         if (next == null) throw new IllegalStateException("Spotify page did not contain any data");
 
-        JSONObject entity = next.getJSONObject("props")
-                .getJSONObject("pageProps")
-                .getJSONObject("state")
-                .getJSONObject("data")
-                .getJSONObject("entity");
+        // Walked defensively rather than chained. A chained getJSONObject throws a bare
+        // "No value for props" if Spotify reshapes its embed payload, which told the user
+        // nothing and looked like the app was broken rather than the page having changed.
+        JSONObject entity = dig(next, "props", "pageProps", "state", "data", "entity");
+        if (entity == null) {
+            throw new IllegalStateException(
+                    "Spotify changed the format of this page. Try the link again later.");
+        }
 
         SpotifyCollection out = new SpotifyCollection();
         out.type = entity.optString("type", type);
@@ -397,6 +400,16 @@ public final class SpotifyResolver {
         } finally {
             c.disconnect();
         }
+    }
+
+    /** Follows a chain of object keys, returning null instead of throwing when one is absent. */
+    private static JSONObject dig(JSONObject root, String... keys) {
+        JSONObject cur = root;
+        for (String key : keys) {
+            if (cur == null) return null;
+            cur = cur.optJSONObject(key);
+        }
+        return cur;
     }
 
     /** Deep-enough copy so a cached collection is never mutated by a caller. */
