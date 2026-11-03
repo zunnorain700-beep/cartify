@@ -484,7 +484,41 @@ public class PlayerActivity extends AppCompatActivity implements Playback.Listen
                             Toast.LENGTH_SHORT).show();
                 }),
                 new MenuSheet.Item(R.drawable.ic_info, "Song info", () -> showSongInfo(t)),
+                new MenuSheet.Item(R.drawable.ic_music_note,
+                        playback.sleepMinutesLeft() > 0
+                                ? "Sleep timer \u00b7 " + playback.sleepMinutesLeft() + " min left"
+                                : "Sleep timer",
+                        this::showSleepTimer),
                 new MenuSheet.Item(R.drawable.ic_queue, "Open queue", this::toggleQueue));
+    }
+
+    /**
+     * Sleep timer sheet.
+     *
+     * Every option arms the timer from now, so re-opening this sheet and picking a
+     * different duration replaces the old countdown rather than stacking a second one.
+     */
+    private void showSleepTimer() {
+        int left = playback.sleepMinutesLeft();
+        String subtitle = left > 0
+                ? "Stops in " + left + " min"
+                : "Playback pauses when the timer runs out";
+        java.util.List<MenuSheet.Item> items = new java.util.ArrayList<>();
+        int[] options = {15, 30, 45, 60};
+        for (int minutes : options) {
+            items.add(new MenuSheet.Item(R.drawable.ic_music_note, minutes + " minutes", () -> {
+                playback.setSleepTimer(minutes);
+                Toast.makeText(this, "Sleep timer: " + minutes + " min", Toast.LENGTH_SHORT).show();
+            }));
+        }
+        if (left > 0) {
+            items.add(new MenuSheet.Item(R.drawable.ic_close, "Turn timer off", () -> {
+                playback.setSleepTimer(0);
+                Toast.makeText(this, "Sleep timer off", Toast.LENGTH_SHORT).show();
+            }));
+        }
+        MenuSheet.show(this, "Sleep timer", subtitle,
+                items.toArray(new MenuSheet.Item[0]));
     }
 
     /** Song details in the same glass sheet, so nothing falls back to a system dialog. */

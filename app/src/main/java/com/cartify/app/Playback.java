@@ -279,6 +279,61 @@ public final class Playback {
         }
     }
 
+    // ------------------------------------------------------------------ sleep timer
+
+    /**
+     * Minutes left before playback stops itself, or 0 when no timer is armed.
+     *
+     * Lives here rather than in a screen so it survives leaving the player, and so the
+     * background service and the notification see the same countdown.
+     */
+    private volatile long sleepAtMs = 0L;
+    private Runnable sleepTick;
+
+    /** Arms the timer for {@code minutes} from now; 0 cancels it. */
+    public void setSleepTimer(int minutes) {
+        cancelSleepTimer();
+        if (minutes <= 0) {
+            notifyPlayback();
+            return;
+        }
+        sleepAtMs = System.currentTimeMillis() + minutes * 60_000L;
+        sleepTick = () -> {
+            if (sleepAtMs == 0L) return;
+            if (System.currentTimeMillis() >= sleepAtMs) {
+                // Pause rather than stop: the queue stays loaded, so the user wakes to the
+                // same song list instead of an empty player.
+                sleepAtMs = 0L;
+                pause();
+                notifyPlayback();
+                return;
+            }
+            // Re-notify once a minute so the player and the notification both redraw the
+            // remaining time without either one polling the clock on its own.
+            notifyPlayback();
+            main.postDelayed(sleepTick, 30_000L);
+        };
+        main.postDelayed(sleepTick, 30_000L);
+        notifyPlayback();
+    }
+
+    public void cancelSleepTimer() {
+        sleepAtMs = 0L;
+        if (sleepTick != null) {
+            main.removeCallbacks(sleepTick);
+            sleepTick = null;
+        }
+    }
+
+    /** Whole minutes remaining, rounded up; 0 when no timer is armed. */
+    public int sleepMinutesLeft() {
+        long at = sleepAtMs;
+        if (at == 0L) return 0;
+        long left = at - System.currentTimeMillis();
+        if (left <= 0) return 0;
+        return (int) ((left + 59_999L) / 60_000L);
+    }
+
     public void stop() {
         playWhenReady = false;
         release();
