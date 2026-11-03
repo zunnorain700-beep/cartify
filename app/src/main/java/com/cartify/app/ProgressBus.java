@@ -72,6 +72,23 @@ public final class ProgressBus {
     }
 
     /** Re-sends everything the bus knows to one late listener. */
+    /**
+     * True while a queue is in flight.
+     *
+     * The screen tracked this in its own flag, which died with the activity: coming
+     * back to a download that was still running showed no progress, no cancel button
+     * and a button that would have queued the same songs a second time. The bus is
+     * the one place that already outlives the screen, so the answer lives there.
+     */
+    public static boolean isRunning() {
+        synchronized (STATUS) {
+            for (Integer state : STATUS.values()) {
+                if (state != null && state == 1) return true;
+            }
+        }
+        return false;
+    }
+
     public static void replay(final Listener l) {
         if (l == null) return;
         java.util.List<Integer> keys = new ArrayList<>();

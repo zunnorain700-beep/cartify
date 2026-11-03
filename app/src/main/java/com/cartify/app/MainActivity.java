@@ -177,6 +177,14 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         // A download may have started before this activity existed (or kept running while
         // the app was in the background), so pick up its live state immediately.
         ProgressBus.replay(this);
+        // A queue that outlived the previous screen keeps its cancel button and its
+        // "already running" guard on the way back in.
+        if (ProgressBus.isRunning()) {
+            queueRunning = true;
+            cancelAllButton.setText("Cancel all");
+            cancelAllButton.setOnClickListener(v -> cancelAllDownloads());
+            cancelAllButton.setVisibility(View.VISIBLE);
+        }
         playback.addListener(this);
         warmUpDownloader();
         requestNotificationPermission();
