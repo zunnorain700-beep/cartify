@@ -190,6 +190,12 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
                     refreshLibrary();
                     toast("Rescanning Music/Cartify");
                 }));
+        if (!playback.queue().isEmpty()) {
+            items.add(new MenuSheet.Item(R.drawable.ic_close, "Clear play queue", () -> {
+                playback.clearQueue();
+                toast("Queue cleared");
+            }));
+        }
         MenuSheet.show(this, "Cartify", "Version " + appVersionName(),
                 items.toArray(new MenuSheet.Item[0]));
     }
