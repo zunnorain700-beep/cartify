@@ -81,15 +81,22 @@ public final class DownloadEngine {
     public static class Failure extends Exception {
         public final String stage;
         final boolean staleExtractor;
+        /** The video resolved, but the chosen client offered no usable stream. */
+        final boolean formatMiss;
 
         Failure(String stage, String message) {
-            this(stage, message, false);
+            this(stage, message, false, false);
         }
 
         Failure(String stage, String message, boolean staleExtractor) {
+            this(stage, message, staleExtractor, false);
+        }
+
+        Failure(String stage, String message, boolean staleExtractor, boolean formatMiss) {
             super(message);
             this.stage = stage;
             this.staleExtractor = staleExtractor;
+            this.formatMiss = formatMiss;
         }
     }
 
@@ -203,19 +210,28 @@ public final class DownloadEngine {
         // The bar must never travel backwards. Each attempt starts above the best value
         // the previous one reached, so a retry reads as "still working", not as a reset.
         int[] highWater = {6};
-        for (int attempt = 0; attempt < 3 && mp3 == null; attempt++) {
+        // Four attempts, not three: on a poor link the first tries are what discover that
+        // the connection is poor, and the last one runs with a single fragment and long
+        // timeouts. Failing a track that would have finished on attempt four is worse than
+        // spending one more round on it.
+        for (int attempt = 0; attempt < 4 && mp3 == null; attempt++) {
             clear(work);
             try {
-                mp3 = fetch(work, track, listener, attempt, job, highWater);
+                mp3 = fetch(work, track, listener, attempt, job, highWater, context);
             } catch (Failure f) {
                 if ("cancelled".equals(f.stage)) throw f;
                 lastFailure = f;
-                // A wrong-length match is worth one more try with a different candidate.
-                boolean retryable = f.staleExtractor || "verify".equals(f.stage);
-                if (!retryable || attempt == 2) throw f;
+                // Three things are worth another attempt: a stale extractor, a wrong-length
+                // match, and a client that offered no usable stream for a video that
+                // resolved fine. Each retry changes something real (refreshed extractor,
+                // different candidate, different client chain) rather than repeating it.
+                boolean retryable = f.staleExtractor || f.formatMiss || "verify".equals(f.stage);
+                if (!retryable || attempt == 3) throw f;
                 if (f.staleExtractor) {
                     report(listener, highWater[0], "Refreshing downloader");
                     refreshExtractor(context.getApplicationContext(), true);
+                } else if (f.formatMiss) {
+                    report(listener, highWater[0], "Trying another source");
                 } else {
                     report(listener, highWater[0], "Trying another match");
                 }
@@ -262,11 +278,37 @@ public final class DownloadEngine {
      * downloading the collection pulled five files per song (very slow, and every
      * rejected candidate flashed an error row). Here only the chosen URL is fetched.
      */
+    /**
+     * Player clients tried in order, per attempt.
+     *
+     * android is first because it skips the JavaScript challenge that made extraction
+     * take 13-20 s. ios and web exist as fallbacks for the videos whose android
+     * manifest carries no audio-only stream; the retry loop switches chain on a
+     * format failure so a track that failed once gets a genuinely different client.
+     */
+    private static final String[] CLIENT_CHAINS = {
+            "android,ios",
+            "ios,web",
+            "web,android",
+            // Last attempt uses the widest client set. It is the slowest to resolve, which
+            // is exactly why it is the last resort rather than the default.
+            "web,android,ios,mweb",
+    };
+
     private static File fetch(File work, Track track, Listener listener, int attempt, Task task,
-                              int[] highWater) throws Failure {
+                              int[] highWater, Context context) throws Failure {
         String query = track.searchQuery();
         long expected = track.durationMs;
         task.check();
+
+        String clientChain = CLIENT_CHAINS[Math.min(attempt, CLIENT_CHAINS.length - 1)];
+
+        // How many parallel fragments this transfer may open. On a fast link more streams
+        // win; on a slow one they starve each other and cause the timeouts that read as
+        // failures. Each retry HALVES the count rather than shaving one off, because a
+        // shared or congested connection can report a healthy link rate and still deliver
+        // a fraction of it: 8 -> 4 -> 2 turns "times out forever" into "finishes slowly".
+        int fragments = Math.max(1, fragmentsForSpeed(context) >> attempt);
 
         // Stages re-report a fixed mark (4 matching, 90 tagging, 95 saving). On a retry the
         // high-water mark is already far past those, so reporting them raw made the row
@@ -281,24 +323,55 @@ public final class DownloadEngine {
         task.check();
 
         YoutubeDLRequest request = new YoutubeDLRequest(picked);
-        request.addOption("-f", "bestaudio/best");
+        // Format selection must never be empty. A single client can hand back a video
+        // whose only streams are video+audio muxed, and "bestaudio/best" then matches
+        // nothing at all: "Requested format is not available". The trailing "best" and
+        // the wildcard keep a playable stream available on every client.
+        request.addOption("-f", "bestaudio/best/bestaudio*/best*");
         request.addOption("--no-playlist");
         // The default web client has to solve YouTube's JavaScript player challenge
         // before it can name a stream, which measured 13-20 s per track on this device
         // and was what the progress bar sat on at 6%. The android client returns the
         // same audio without that round trip: 16.5 s of extraction became 4.0 s on a
         // back-to-back test of the same network and device.
-        request.addOption("--extractor-args", "youtube:player_client=android");
-
+        //
+        // A chain rather than a single client: some videos expose no audio-only stream
+        // on android, and yt-dlp tries each in order until one yields a format.
+        request.addOption("--extractor-args",
+                "youtube:player_client=" + clientChain);
 
         request.addOption("--no-warnings");
         request.addOption("--no-mtime");
         request.addOption("--extract-audio");
         request.addOption("--audio-format", "mp3");
         request.addOption("--audio-quality", "5");
-        request.addOption("--retries", "3");
-        // Pull the audio in parallel chunks instead of one sequential stream.
-        request.addOption("--concurrent-fragments", "8");
+
+        // ---------------------------------------------------------------- slow links
+        //
+        // The previous settings were tuned on a fast connection and actively hurt on a
+        // weak one. Every option below exists because its opposite fails at low bandwidth:
+        //
+        // --concurrent-fragments 8 opened eight parallel streams. On a slow link those
+        //   compete for the same narrow pipe, so each fragment times out waiting its turn
+        //   and yt-dlp reports "Remote end closed connection" or simply stalls. Fewer
+        //   streams finish more reliably than many starved ones, and the count is chosen
+        //   from the measured link speed when one is known.
+        //
+        // --retries 3 with the default backoff gave up after a few seconds of a link that
+        //   was merely slow, not broken. More attempts with fragment-level retries let a
+        //   transfer resume instead of restarting the whole track.
+        //
+        // The socket timeout is what actually converts "slow" into "failed": yt-dlp's
+        //   default read timeout is short enough that a 2G-class link trips it mid-file.
+        request.addOption("--retries", "10");
+        request.addOption("--fragment-retries", "10");
+        request.addOption("--retry-sleep", "2");
+        request.addOption("--socket-timeout", "30");
+        request.addOption("--concurrent-fragments", String.valueOf(fragments));
+
+        // Never abort a slow download for being slow. This is the difference between
+        // "this track takes four minutes on a bad connection" and "this track failed".
+        request.addOption("--no-abort-on-error");
         // The audio stream is already Opus/AAC at a fixed rate; re-encoding it at V0
         // cost real time per track for no audible gain.
         request.addOption("--postprocessor-args", "-threads 0");
@@ -319,6 +392,31 @@ public final class DownloadEngine {
         if (response.getExitCode() != 0) {
             String err = errorLine(response.getErr());
             String lower = err.toLowerCase(Locale.US);
+            // "format is not available" is not a stale extractor: the video resolved fine,
+            // it just has no stream the chosen client offered. It is retried with a
+            // different client chain instead of surfacing as a failed row.
+            boolean formatMiss = lower.contains("requested format is not available")
+                    || lower.contains("no video formats found")
+                    || lower.contains("requested format not available");
+            if (formatMiss) {
+                throw new Failure("format", err, false, true);
+            }
+            // A dropped connection is retried on a different client chain too: the retry
+            // opens a fresh CDN session instead of repeating the request that just failed.
+            boolean transientNet = lower.contains("remote end closed connection")
+                    || lower.contains("connection reset")
+                    || lower.contains("connection aborted")
+                    || lower.contains("timed out")
+                    || lower.contains("temporary failure")
+                    // YouTube sometimes hands back a stream URL that resolves but delivers
+                    // nothing. The format is valid on paper, the CDN returns zero bytes.
+                    // Another client gets a different URL, which is the actual fix.
+                    || lower.contains("did not get any data blocks")
+                    || lower.contains("unable to download video data")
+                    || lower.contains("incomplete read");
+            if (transientNet) {
+                throw new Failure("format", err, false, true);
+            }
             boolean stale = err.contains("403")
                     || lower.contains("sign in")
                     || lower.contains("confirm your age")
@@ -330,6 +428,38 @@ public final class DownloadEngine {
         if (mp3 == null) throw new Failure("convert", "No MP3 was produced");
         report(listener, 97, "Tagging");
         return mp3;
+    }
+
+    /**
+     * How many parallel fragments the current link can actually feed.
+     *
+     * The old build hardcoded 8, which is faster on a good connection and actively harmful
+     * on a bad one: eight streams share one narrow pipe, each waits longer than its socket
+     * timeout, and yt-dlp gives up on a link that was only slow. The negotiated downstream
+     * rate is a good enough proxy — it is what the radio has agreed to, not a guess.
+     *
+     * Unknown links get 4, the middle of the range, so an unreadable connection is treated
+     * as average rather than as either extreme.
+     */
+    private static int fragmentsForSpeed(Context context) {
+        if (context == null) return 4;
+        try {
+            android.net.ConnectivityManager cm = (android.net.ConnectivityManager)
+                    context.getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) return 4;
+            android.net.Network net = cm.getActiveNetwork();
+            if (net == null) return 2;
+            android.net.NetworkCapabilities caps = cm.getNetworkCapabilities(net);
+            if (caps == null) return 2;
+            int kbps = caps.getLinkDownstreamBandwidthKbps();
+            if (kbps <= 0) return 4;
+            if (kbps < 500) return 1;       // ~2G / poor signal: one stream, no contention
+            if (kbps < 2000) return 2;      // ~3G
+            if (kbps < 8000) return 4;      // typical 4G
+            return 8;                       // fast link: parallel fragments pay off
+        } catch (Throwable e) {
+            return 4;
+        }
     }
 
     /**

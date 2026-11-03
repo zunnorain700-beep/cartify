@@ -102,18 +102,30 @@ public final class SpotifyResolver {
      */
     public static void attachTrackArtwork(SpotifyCollection collection, Runnable onChanged) {
         if (collection == null || collection.tracks.size() <= 1) return;
+        // One thread, not eight. Eight parallel lookups is what got the app rate limited:
+        // a 100-track playlist fired 100 requests in a couple of seconds. Artwork is
+        // cosmetic, so it can arrive serially over a few seconds instead of all at once.
         final android.os.Handler main = new android.os.Handler(android.os.Looper.getMainLooper());
         final java.util.concurrent.ExecutorService pool =
-                java.util.concurrent.Executors.newFixedThreadPool(8);
-        for (final Track t : collection.tracks) {
-            if (t.id == null || t.id.isEmpty()) continue;
-            pool.execute(() -> {
+                java.util.concurrent.Executors.newSingleThreadExecutor();
+        pool.execute(() -> {
+            int failures = 0;
+            for (Track t : collection.tracks) {
+                if (t.id == null || t.id.isEmpty()) continue;
+                // Once Spotify starts refusing, stop asking. Continuing would deepen the
+                // block and the next resolve would fail too, which is far worse than
+                // plain covers.
+                if (failures >= 3) break;
                 String url = oEmbedThumbnail(t.id);
-                if (url.isEmpty()) return;
+                if (url.isEmpty()) {
+                    failures++;
+                    continue;
+                }
+                failures = 0;
                 t.coverUrl = url;
                 if (onChanged != null) main.post(onChanged);
-            });
-        }
+            }
+        });
         pool.shutdown();
     }
 
@@ -222,8 +234,76 @@ public final class SpotifyResolver {
         }
     }
 
+    /**
+     * Minimum spacing between Spotify requests, process-wide.
+     *
+     * Spotify answers a burst with HTTP 429 and then keeps refusing for a while, which is
+     * what made "paste a link" fail outright after a few resolves. Every request now waits
+     * its turn behind this gate: roughly four per second is enough for the UI and far
+     * below anything that looks like abuse.
+     */
+    private static final long MIN_GAP_MS = 250L;
+    private static final Object GATE = new Object();
+    private static long lastRequestAt = 0L;
+    /** Set when Spotify has told us to back off; cleared by a successful request. */
+    private static volatile long coolDownUntil = 0L;
+
+    private static void awaitTurn() throws InterruptedException {
+        synchronized (GATE) {
+            long now = System.currentTimeMillis();
+            long wakeAt = Math.max(now, Math.max(lastRequestAt + MIN_GAP_MS, coolDownUntil));
+            long wait = wakeAt - now;
+            if (wait > 0) Thread.sleep(Math.min(wait, 30000L));
+            lastRequestAt = System.currentTimeMillis();
+        }
+    }
+
+    /**
+     * Reads Retry-After when Spotify sends one, otherwise backs off for a few seconds.
+     * The cooldown is shared by every caller so one 429 pauses the whole resolver instead
+     * of each thread discovering the block separately.
+     */
+    private static void noteRateLimited(HttpURLConnection c) {
+        long seconds = 5L;
+        try {
+            String retryAfter = c.getHeaderField("Retry-After");
+            if (retryAfter != null) seconds = Math.max(1L, Long.parseLong(retryAfter.trim()));
+        } catch (Exception ignored) {
+        }
+        // Cap it: a misreported header should not freeze the screen for an hour.
+        seconds = Math.min(seconds, 60L);
+        coolDownUntil = System.currentTimeMillis() + seconds * 1000L;
+    }
+
     private static String httpGet(String url) throws Exception {
-        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        return httpGet(url, true);
+    }
+
+    private static String httpGet(String url, boolean mayRetry) throws Exception {
+        return httpGet(url, mayRetry, 0);
+    }
+
+    /**
+     * Retries DNS resolution a few times before giving up.
+     *
+     * On shared networks the resolver intermittently answers NXDOMAIN for hosts that
+     * resolve fine seconds later; that surfaced as "Could not read that link" for a link
+     * the browser opened without trouble. A lookup failure says nothing about the link,
+     * only about the moment, so it is worth two more tries after a short pause.
+     */
+    private static String httpGet(String url, boolean mayRetry, int dnsRetry) throws Exception {
+        awaitTurn();
+        HttpURLConnection c;
+        try {
+            c = (HttpURLConnection) new URL(url).openConnection();
+        } catch (java.net.UnknownHostException e) {
+            if (dnsRetry >= 3) {
+                throw new IllegalStateException(
+                        "Network could not find Spotify. Check the connection and try again.", e);
+            }
+            Thread.sleep(700L * (dnsRetry + 1));
+            return httpGet(url, mayRetry, dnsRetry + 1);
+        }
         c.setConnectTimeout(12000);
         c.setReadTimeout(15000);
         c.setRequestProperty("User-Agent", UA);
@@ -234,7 +314,32 @@ public final class SpotifyResolver {
         c.setRequestProperty("Accept-Encoding", "gzip");
         c.setInstanceFollowRedirects(true);
         try {
+            c.connect();
+        } catch (java.net.UnknownHostException e) {
+            c.disconnect();
+            if (dnsRetry >= 3) {
+                throw new IllegalStateException(
+                        "Network could not find Spotify. Check the connection and try again.", e);
+            }
+            Thread.sleep(700L * (dnsRetry + 1));
+            return httpGet(url, mayRetry, dnsRetry + 1);
+        }
+        try {
             int code = c.getResponseCode();
+            if (code == 429) {
+                noteRateLimited(c);
+                if (mayRetry) {
+                    // One patient retry after the cooldown. This is the difference between
+                    // "could not read that link" and the list simply appearing a few
+                    // seconds later.
+                    c.disconnect();
+                    awaitTurn();
+                    return httpGet(url, false);
+                }
+                throw new IllegalStateException(
+                        "Spotify is rate limiting this device. Wait a moment and try again.");
+            }
+            coolDownUntil = 0L;
             InputStream raw = code >= 400 ? c.getErrorStream() : c.getInputStream();
             if (raw == null) throw new IllegalStateException("Spotify replied HTTP " + code);
             boolean gz = "gzip".equalsIgnoreCase(c.getContentEncoding());
