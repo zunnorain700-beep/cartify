@@ -430,6 +430,21 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
                 clearButton.setVisibility(hasText ? View.VISIBLE : View.GONE)));
 
         resolveButton.setOnClickListener(v -> resolve());
+
+        // Direct search: no link to copy, no browser round trip. Results become the same
+        // Track rows a resolved Spotify link produces, so downloading is identical.
+        final EditText searchInput = findViewById(R.id.searchInput);
+        View searchGo = findViewById(R.id.searchGo);
+        if (searchGo != null) searchGo.setOnClickListener(v -> runSearch(searchInput));
+        if (searchInput != null) {
+            searchInput.setOnEditorActionListener((v, actionId, event) -> {
+                if (actionId == android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH) {
+                    runSearch(searchInput);
+                    return true;
+                }
+                return false;
+            });
+        }
         downloadAllButton.setOnClickListener(v -> {
             if (collection != null) startDownload(collection.tracks);
         });
@@ -715,6 +730,47 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
 
     // ---------------------------------------------------------------- resolving
 
+    /**
+     * Searches the public catalog and shows the hits as normal download rows.
+     *
+     * Results are ordinary Track objects, so tapping Download all runs the exact same
+     * matching and encoding path a Spotify link uses. Nothing in the download pipeline
+     * needed to change to support this.
+     */
+    private void runSearch(EditText input) {
+        if (input == null) return;
+        if (queueRunning) {
+            toast("A download is still running. Wait for it to finish, or cancel it.");
+            return;
+        }
+        String query = input.getText().toString().trim();
+        if (query.isEmpty()) {
+            toast("Type a song, artist or album");
+            return;
+        }
+        hideKeyboard();
+        setBusy(true, "Searching for " + query + "...");
+        MusicSearch.search(query, new MusicSearch.Callback() {
+            @Override
+            public void onResults(List<Track> tracks) {
+                SpotifyCollection found = new SpotifyCollection();
+                found.name = query;
+                found.type = "search";
+                found.tracks.addAll(tracks);
+                showCollection(found);
+                // showCollection reports the count as if it were a resolved link; make it
+                // read as a search result instead.
+                setBusy(false, tracks.size() + (tracks.size() == 1 ? " result" : " results")
+                        + " for " + query);
+            }
+
+            @Override
+            public void onFailed(String message) {
+                setBusy(false, "Search failed: " + message);
+            }
+        });
+    }
+
     private void resolve() {
         if (queueRunning) {
             toast("A download is still running. Wait for it to finish, or cancel it.");
@@ -746,12 +802,11 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
     private void showCollection(SpotifyCollection resolved) {
         collection = resolved;
         adapter.submit(resolved.tracks);
-        // Cascade the new rows in. The animation is cleared afterwards so later
-        // progress updates (which rebind single rows) stay instant.
-        list.setLayoutAnimation(android.view.animation.AnimationUtils.loadLayoutAnimation(
-                this, R.anim.row_in_layout));
-        list.scheduleLayoutAnimation();
-        main.postDelayed(() -> list.setLayoutAnimation(null), 900);
+        // Rows appear without a cascade animation. The old code set a layout animation
+        // and cleared it on a 900 ms timer, which crashed with a NullPointerException
+        // inside ViewGroup.dispatchDraw when the timer fired mid-draw:
+        // LayoutAnimationController.isDone() on a null reference. A cosmetic entrance is
+        // not worth a crash on the most common action in the app.
         collectionBar.setVisibility(View.VISIBLE);
         emptyState.setVisibility(View.GONE);
         collectionName.setText(resolved.name);
@@ -764,8 +819,8 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
             Track probe = new Track(resolved.name, "", resolved.coverUrl);
             Art.load(this, probe, collectionCover);
         }
-        setBusy(false, resolved.tracks.size() + " track" + (resolved.tracks.size() == 1 ? "" : "s")
-                + " ready \u2014 tap Download");
+        lastCollectionStatus = resolved.tracks.size() + " track" + (resolved.tracks.size() == 1 ? "" : "s");
+        setBusy(false, lastCollectionStatus + " ready - tap Download");
 
         markAlreadySaved(resolved.tracks);
         // Per-track covers arrive in the background and repaint their row as they land;
@@ -782,6 +837,9 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
      * behind. The resolve step now checks the saved library and marks those rows as
      * already downloaded, so Download all skips them and the row says so plainly.
      */
+    /** The status line showCollection wrote, so markAlreadySaved can append to it. */
+    private String lastCollectionStatus = "";
+
     private void markAlreadySaved(List<Track> tracks) {
         if (tracks == null || tracks.isEmpty()) return;
         io.execute(() -> {
@@ -804,7 +862,10 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
                 }
                 adapter.notifyDataSetChanged();
                 int n = found.size();
-                statusText.setText(n + (n == 1 ? " track is" : " tracks are")
+                // Appended rather than replacing the headline, so a search result still
+                // reads N results for X with the saved count after it.
+                String base = lastCollectionStatus.isEmpty() ? "" : lastCollectionStatus + " - ";
+                statusText.setText(base + n + (n == 1 ? " track is" : " tracks are")
                         + " already in your library");
             });
         });
