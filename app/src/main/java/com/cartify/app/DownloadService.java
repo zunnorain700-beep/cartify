@@ -234,6 +234,13 @@ public class DownloadService extends Service implements ProgressBus.Listener {
                         if (task.isCancelled() || cancelled) {
                             ProgressBus.cancelled(index);
                         } else {
+                            // Without this the log says "22 saved, 3 failed" and gives no
+                            // way to find out which three songs or why, which is exactly the
+                            // question worth answering when a batch goes wrong.
+                            Log.w(TAG, "track failed: \"" + t.title + " - " + t.artist
+                                    + "\" stage=" + (e instanceof DownloadEngine.Failure
+                                        ? ((DownloadEngine.Failure) e).stage : "unknown")
+                                    + " reason=" + message);
                             ProgressBus.finished(index, null, message);
                             failed.incrementAndGet();
                         }
