@@ -24,7 +24,7 @@ Working list for the 3 November 2026 session. Ordered by value, not by effort.
 ## Next, highest value first
 
 - [x] Per-track download quality choice (V0 / 320 / 192 / 128)
-- [ ] Save the shuffle and repeat choice across app restarts
+- [x] Save the shuffle and repeat choice across app restarts
 - [x] In-app search (Deezer + iTunes) with ranked results
 - [x] Recommended music shelf on the search home
 - [x] Recent searches stored on device

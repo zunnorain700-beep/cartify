@@ -58,6 +58,22 @@ public final class Playback {
 
     private Playback(Context context) {
         this.app = context;
+        // Shuffle and repeat are habits, not per-session choices: someone who listens on
+        // shuffle should not have to turn it back on after every app restart.
+        android.content.SharedPreferences prefs =
+                app.getSharedPreferences("cartify_prefs", Context.MODE_PRIVATE);
+        shuffle = prefs.getBoolean("shuffle_on", false);
+        int savedRepeat = prefs.getInt("repeat_mode", REPEAT_OFF);
+        repeat = (savedRepeat >= REPEAT_OFF && savedRepeat <= REPEAT_ONE) ? savedRepeat : REPEAT_OFF;
+    }
+
+    /** Remembers the mode for the next launch; the queue itself is not persisted. */
+    private void saveModes() {
+        app.getSharedPreferences("cartify_prefs", Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean("shuffle_on", shuffle)
+                .putInt("repeat_mode", repeat)
+                .apply();
     }
 
     // ------------------------------------------------------------------ listeners
@@ -436,6 +452,7 @@ public final class Playback {
     public void setShuffle(boolean on) {
         shuffle = on;
         rebuildOrder(index);
+        saveModes();
         notifyPlayback();
     }
 
@@ -445,6 +462,7 @@ public final class Playback {
 
     public void cycleRepeat() {
         repeat = (repeat + 1) % 3;
+        saveModes();
         notifyPlayback();
     }
 
