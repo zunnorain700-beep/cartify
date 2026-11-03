@@ -1,0 +1,14 @@
+Match the original recording and never downgrade audio
+
+Matching used to accept anything within 20 seconds and fall back to the
+first hit, which saved a Bonus Track edit as the real song and could not
+tell an official upload from a lyrics re-upload.
+
+- score candidates on duration, title words, artist words and variant tags
+  instead of one length threshold; reject below the bar rather than guess
+- widen the search to 10 candidates (still one metadata call)
+- prefer official/Topic/VEVO audio and penalise remix, live, acoustic,
+  karaoke and lyrics re-uploads
+- audio quality V5 to V0 with abr-sorted bestaudio: ~225 kbps, the least
+  lossy MP3 this pipeline can produce
+- bound the per-query pick cache so it cannot grow for the process lifetime

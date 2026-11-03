@@ -1,0 +1,7 @@
+Fix thread leaks and unbounded caches in the backend
+
+- shut down each activity's executor in onDestroy: MainActivity,
+  PlayerActivity and PlaylistActivity each created a single-thread pool and
+  never released it, so every rotation or return to the app leaked a thread
+- bound Art.MISSING, which grew for the life of the process with an entry per
+  song that had no embedded artwork or a dead cover URL
