@@ -182,7 +182,12 @@ public class DownloadService extends Service implements ProgressBus.Listener {
         final AtomicInteger completed = new AtomicInteger(0);
         final AtomicInteger failed = new AtomicInteger(0);
 
-        int workers = Math.max(1, Math.min(PARALLEL, tracks.size()));
+        // Six workers all pulling fragments at once is what a fast link wants and what a
+        // slow one cannot survive: the queue spent its time retrying instead of finishing.
+        // The pool size now follows the same link measurement the per-track fragment count
+        // uses, so a weak connection downloads fewer songs at a time and completes them.
+        int budget = workersForLink(this);
+        int workers = Math.max(1, Math.min(Math.min(PARALLEL, budget), tracks.size()));
         List<Thread> pool = new ArrayList<>();
 
         for (int slot = 0; slot < workers; slot++) {
@@ -213,7 +218,11 @@ public class DownloadService extends Service implements ProgressBus.Listener {
                             long now = System.currentTimeMillis();
                             if (now - lastNote >= 400 || percent >= 100) {
                                 lastNote = now;
-                                updateNotification(Math.min(total, active.get()), total,
+                                // The bar counts finished tracks, not in-flight ones. Using
+                                // the active count made the title read "3 of 40" while
+                                // three downloads ran and nothing had been saved yet.
+                                updateNotification(
+                                        Math.min(total, completed.get() + failed.get()), total,
                                         t.title + " - " + detail);
                             }
                             return cancelled;
@@ -261,6 +270,33 @@ public class DownloadService extends Service implements ProgressBus.Listener {
         updateNotification(total, total, "Finished — " + completed.get() + " saved");
         stopForeground(false);
         stopSelf();
+    }
+
+    /**
+     * How many tracks may download at once on this connection.
+     *
+     * Mirrors the per-transfer fragment budget in DownloadEngine: a link that cannot feed
+     * one fast stream certainly cannot feed six, and oversubscribing it turns a slow
+     * download into a failing one. Unknown links get the old behaviour.
+     */
+    private static int workersForLink(Context context) {
+        try {
+            android.net.ConnectivityManager cm = (android.net.ConnectivityManager)
+                    context.getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (cm == null) return PARALLEL;
+            android.net.Network net = cm.getActiveNetwork();
+            if (net == null) return 2;
+            android.net.NetworkCapabilities caps = cm.getNetworkCapabilities(net);
+            if (caps == null) return 2;
+            int kbps = caps.getLinkDownstreamBandwidthKbps();
+            if (kbps <= 0) return PARALLEL;
+            if (kbps < 1000) return 2;      // ~2G / poor signal
+            if (kbps < 4000) return 3;      // ~3G
+            if (kbps < 12000) return 4;     // typical 4G
+            return PARALLEL;                // fast link: the full pool
+        } catch (Throwable e) {
+            return PARALLEL;
+        }
     }
 
     private static String friendly(Exception e) {
