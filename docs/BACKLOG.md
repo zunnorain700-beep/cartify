@@ -29,7 +29,7 @@ Working list for the 3 November 2026 session. Ordered by value, not by effort.
 - [x] Recommended music shelf on the search home
 - [x] Recent searches stored on device
 - [x] Search becomes the home tab; library renamed Offline
-- [ ] Search inside playlists, not just the library
+- [x] Search inside playlists, not just the library
 - [x] Sort playlists by name or song count
 - [x] Show download progress percentage on the notification title, not just text
 - [x] Export a playlist as an .m3u file next to the MP3s

@@ -149,6 +149,26 @@
                 android:textSize="12sp" />
         </LinearLayout>
 
+        <!-- Filters the songs already in this playlist. Hidden while the list is empty,
+             because a search box over nothing is just another thing to dismiss. -->
+        <EditText
+            android:id="@+id/plSearch"
+            android:layout_width="match_parent"
+            android:layout_height="42dp"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/bg_input"
+            android:hint="Search in this playlist"
+            android:imeOptions="actionSearch"
+            android:inputType="text"
+            android:maxLines="1"
+            android:paddingStart="14dp"
+            android:paddingEnd="14dp"
+            android:singleLine="true"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_secondary"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
         <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="0dp"

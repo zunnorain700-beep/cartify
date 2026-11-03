@@ -46,6 +46,10 @@ public class PlaylistActivity extends AppCompatActivity implements Playback.List
     private RecyclerView songs;
     private LinearLayout empty;
     private TextView playButton;
+    /** Filters the songs already in this playlist. */
+    private android.widget.EditText search;
+    /** The filter text, applied by {@link #visibleTracks()}. */
+    private String filter = "";
 
     /** Every saved song, loaded once so the picker opens instantly. */
     private final List<Track> library = new ArrayList<>();
@@ -78,6 +82,22 @@ public class PlaylistActivity extends AppCompatActivity implements Playback.List
         meta = findViewById(R.id.plMeta);
         songs = findViewById(R.id.plSongs);
         empty = findViewById(R.id.plEmpty);
+        search = findViewById(R.id.plSearch);
+        search.addTextChangedListener(new android.text.TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int a, int b, int c) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int a, int b, int c) {
+            }
+
+            @Override
+            public void afterTextChanged(android.text.Editable e) {
+                filter = e == null ? "" : e.toString();
+                render();
+            }
+        });
         playButton = findViewById(R.id.plPlay);
 
         ImageButton back = findViewById(R.id.plBack);
@@ -111,8 +131,7 @@ public class PlaylistActivity extends AppCompatActivity implements Playback.List
         title.setText(playlist.name);
         meta.setText(playlist.summary());
         PlaylistArt.load(this, playlist, hero, heroFallback);
-        List<Track> tracks = new ArrayList<>();
-        for (Playlist.Entry e : playlist.songs) tracks.add(e.toTrack());
+        List<Track> tracks = visibleTracks();
         adapter.submit(tracks);
         adapter.setPlaying(playback.current() == null ? "" : playback.current().localUri);
         boolean has = !tracks.isEmpty();
@@ -120,6 +139,40 @@ public class PlaylistActivity extends AppCompatActivity implements Playback.List
         songs.setVisibility(has ? View.VISIBLE : View.GONE);
         playButton.setAlpha(has ? 1f : 0.5f);
         playButton.setEnabled(has);
+        // The box is pointless over an empty playlist, and showing "no matches"
+        // for a playlist that has no songs would be misleading.
+        search.setVisibility(playlist.songs.isEmpty() ? View.GONE : View.VISIBLE);
+        if (tracks.isEmpty() && !playlist.songs.isEmpty()) {
+            empty.setVisibility(View.VISIBLE);
+            songs.setVisibility(View.GONE);
+        }
+    }
+
+    /**
+     * The songs to show: all of them, or only those matching the search box.
+     *
+     * Matching is a case-insensitive substring over title, artist and album, which is
+     * what someone typing three letters of a song name expects. An empty filter
+     * returns the list unchanged so the normal path costs one string compare.
+     */
+    private List<Track> visibleTracks() {
+        List<Track> out = new ArrayList<>();
+        String needle = filter == null ? "" : filter.trim().toLowerCase(java.util.Locale.US);
+        for (Playlist.Entry e : playlist.songs) {
+            Track t = e.toTrack();
+            if (needle.isEmpty() || matches(t, needle)) out.add(t);
+        }
+        return out;
+    }
+
+    private static boolean matches(Track t, String needle) {
+        return contains(t.title, needle)
+                || contains(t.artist, needle)
+                || contains(t.album, needle);
+    }
+
+    private static boolean contains(String value, String needle) {
+        return value != null && value.toLowerCase(java.util.Locale.US).contains(needle);
     }
 
     // ---------------------------------------------------------------- playing
