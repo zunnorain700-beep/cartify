@@ -794,6 +794,8 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
             return;
         }
         hideKeyboard();
+        // Remembered before the request so a failed search is still one tap to retry.
+        SearchHistory.remember(this, query);
         setBusy(true, "Searching for " + query + "...");
         MusicSearch.search(query, new MusicSearch.Callback() {
             @Override
