@@ -37,10 +37,17 @@ Working list for the 3 November 2026 session. Ordered by value, not by effort.
 - [x] Warn before deleting a song that is inside playlists
 - [x] Remember the last scroll position per tab
 - [x] Artist grouping in the library
+- [x] Cache artwork on disk so a restart does not re-download every cover
+- [x] Album or playlist kept as a local playlist
+- [x] Audio focus so calls and other players interrupt playback
+- [x] Recently played on the home screen
+- [x] Readable failure reason on a failed row
+- [x] "No internet connection" instead of a DNS error
+- [x] Listening time in Library info
 
-- [x] Cache artwork on disk so a restart does not re-download every cover`n`n## Ideas worth evaluating
+## Ideas worth evaluating
 
 - Replace the whole-library MediaStore rescan with an incremental insert per finished track
 - Cache lyrics to disk so a replayed song does not hit the network again
 - Detect a track that is already playing and offer to jump to it instead of re-adding
-- Show total listening time in Library info
+- Offer a per-playlist download when a Spotify playlist is opened
