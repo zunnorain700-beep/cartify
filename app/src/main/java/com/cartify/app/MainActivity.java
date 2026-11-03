@@ -166,7 +166,10 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         // status line says so and counts down instead of the button appearing to do
         // nothing while the resolver sleeps.
         SpotifyResolver.setWaiter(seconds -> main.post(() -> {
-            if (!isFinishing()) {
+            // Only while a link is actually being read. The resolver also runs for
+            // artwork and artist lookups in the background, and those must not
+            // overwrite the status line of a search that is already showing results.
+            if (!isFinishing() && resolvingLink) {
                 statusText.setText("Spotify is busy \u2014 retrying in " + seconds + "s");
             }
         }));
@@ -1075,13 +1078,18 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         String link = extractLink(raw);
         hideKeyboard();
         setBusy(true, "Reading Spotify link\u2026");
+        resolvingLink = true;
         io.execute(() -> {
             try {
                 SpotifyCollection resolved = SpotifyResolver.resolve(link);
-                main.post(() -> showCollection(resolved));
+                main.post(() -> {
+                    resolvingLink = false;
+                    showCollection(resolved);
+                });
             } catch (Exception e) {
                 String message = e.getMessage() == null ? e.toString() : e.getMessage();
                 main.post(() -> {
+                    resolvingLink = false;
                     setBusy(false, "Could not read that link");
                     toast(message);
                 });
@@ -1272,6 +1280,9 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
      * the service protocol, and this removes the failure mode today.
      */
     private volatile boolean queueRunning;
+
+    /** True only while a pasted Spotify link is being read. */
+    private volatile boolean resolvingLink;
 
     private void startDownload(List<Track> tracks) {
         if (tracks.isEmpty()) {
