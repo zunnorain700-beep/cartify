@@ -32,7 +32,7 @@ Working list for the 3 November 2026 session. Ordered by value, not by effort.
 - [ ] Search inside playlists, not just the library
 - [ ] Sort playlists by name or song count
 - [ ] Show download progress percentage on the notification title, not just text
-- [ ] Export a playlist as an .m3u file next to the MP3s
+- [x] Export a playlist as an .m3u file next to the MP3s
 - [ ] Undo for a single-song delete (keep the file for ten seconds)
 - [ ] Warn before deleting a song that is inside playlists
 - [ ] Remember the last scroll position per tab

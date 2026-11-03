@@ -719,7 +719,8 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
                         PlaylistActions.rename(this, playlist, this::refreshPlaylists)),
                 new MenuSheet.Item(R.drawable.ic_image, "Change cover", () ->
                         PlaylistActions.pickCover(this, playlist)),
-                new MenuSheet.Item(R.drawable.ic_delete, "Delete playlist", true, () ->
+                new MenuSheet.Item(R.drawable.ic_download, "Export as .m3u", () -> exportPlaylist(playlist)),
+        new MenuSheet.Item(R.drawable.ic_delete, "Delete playlist", true, () ->
                         PlaylistActions.confirmDelete(this, playlist, this::refreshPlaylists)));
     }
 
@@ -842,6 +843,32 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         }
     }
 
+    /**
+     * Writes the playlist next to the music as an .m3u file.
+     *
+     * Until now a playlist existed only inside the app. Exporting it means the list can be
+     * opened by another player or copied off the phone, and the songs themselves are
+     * already there because the export sits in the same folder.
+     */
+    private void exportPlaylist(Playlist playlist) {
+        if (playlist == null) return;
+        if (playlist.songs.isEmpty()) {
+            toast("This playlist is empty");
+            return;
+        }
+        toast("Exporting " + playlist.name + "\u2026");
+        PlaylistExport.export(this, playlist, true, new PlaylistExport.Callback() {
+            @Override
+            public void onDone(String displayPath) {
+                toast("Saved to " + displayPath);
+            }
+
+            @Override
+            public void onFailed(String message) {
+                toast("Export failed: " + message);
+            }
+        });
+    }
     private void loadRecommendations() {
         if (adapter == null || adapter.getItemCount() > 0) return;
         MusicSearch.recommendations(new MusicSearch.Callback() {

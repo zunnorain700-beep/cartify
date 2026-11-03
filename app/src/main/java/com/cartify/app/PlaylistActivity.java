@@ -209,8 +209,38 @@ public class PlaylistActivity extends AppCompatActivity implements Playback.List
                     playlist = PlaylistStore.byId(this, playlist.id);
                     render();
                 }),
+                new MenuSheet.Item(R.drawable.ic_download, "Export as .m3u", this::exportPlaylist),
                 new MenuSheet.Item(R.drawable.ic_delete, "Delete playlist", true, () ->
                         PlaylistActions.confirmDelete(this, playlist, this::finish)));
+    }
+
+    /**
+     * Writes this playlist to Music/Cartify as an .m3u file.
+     *
+     * Playlists used to exist only inside the app. With this, the list can be opened by any
+     * other player or copied off the phone, and the songs it points at already sit in the
+     * same folder, so the export keeps working after the phone is wiped.
+     */
+    private void exportPlaylist() {
+        if (playlist == null) return;
+        if (playlist.songs.isEmpty()) {
+            Toast.makeText(this, "This playlist is empty", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        Toast.makeText(this, "Exporting…", Toast.LENGTH_SHORT).show();
+        PlaylistExport.export(this, playlist, true, new PlaylistExport.Callback() {
+            @Override
+            public void onDone(String displayPath) {
+                Toast.makeText(PlaylistActivity.this, "Saved to " + displayPath,
+                        Toast.LENGTH_LONG).show();
+            }
+
+            @Override
+            public void onFailed(String message) {
+                Toast.makeText(PlaylistActivity.this, "Export failed: " + message,
+                        Toast.LENGTH_LONG).show();
+            }
+        });
     }
 
     private void addSongs() {
