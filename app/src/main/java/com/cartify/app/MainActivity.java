@@ -1017,9 +1017,10 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
                 int n = found.size();
                 // Appended rather than replacing the headline, so a search result still
                 // reads N results for X with the saved count after it.
-                String base = lastCollectionStatus.isEmpty() ? "" : lastCollectionStatus + " - ";
-                statusText.setText(base + n + (n == 1 ? " track is" : " tracks are")
-                        + " already in your library");
+                // Reads as a suffix, so the headline never repeats the word "track".
+                String suffix = n + (n == 1 ? " is" : " are") + " already saved";
+                statusText.setText(lastCollectionStatus.isEmpty()
+                        ? suffix : lastCollectionStatus + "  ·  " + suffix);
             });
         });
     }
