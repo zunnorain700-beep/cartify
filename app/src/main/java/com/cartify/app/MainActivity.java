@@ -1419,11 +1419,36 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
     /** Deleting is irreversible, so ask first in the same glass sheet, saying exactly what goes. */
     private void confirmDelete(Track track) {
         MenuSheet.show(this, "Delete \"" + track.title + "\"?",
-                "It will be removed from this device and from Music/Cartify. This cannot be undone.",
+                deleteWarning(track),
                 new MenuSheet.Item(R.drawable.ic_delete, "Delete from device", true,
                         () -> deleteSong(track)),
                 new MenuSheet.Item(R.drawable.ic_close, "Cancel", () -> {
                 }));
+    }
+
+    /**
+     * Spells out the real cost of a delete.
+     *
+     * A song can sit in several playlists, and those entries keep pointing at a file that
+     * no longer exists once it is deleted. Counting them here means the warning names the
+     * playlists instead of leaving the user to discover empty rows afterwards.
+     */
+    private String deleteWarning(Track track) {
+        String base = "It will be removed from this device and from Music/Cartify.";
+        if (track.localUri == null || track.localUri.isEmpty()) return base;
+        try {
+            StringBuilder names = new StringBuilder();
+            for (Playlist p : PlaylistStore.all(this)) {
+                if (!p.contains(track.localUri)) continue;
+                if (names.length() > 0) names.append(", ");
+                names.append(p.name);
+            }
+            if (names.length() == 0) return base + " This cannot be undone.";
+            return base + " It is also in " + names + ", where it will stop playing."
+                    + " This cannot be undone.";
+        } catch (Exception e) {
+            return base + " This cannot be undone.";
+        }
     }
 
     private void deleteSong(Track track) {
