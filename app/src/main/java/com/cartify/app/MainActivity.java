@@ -270,6 +270,33 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
      * and doing that on the main thread is exactly the kind of thing that produces a
      * visible freeze for no reason.
      */
+    /**
+     * How much time has actually been listened to on this device.
+     *
+     * Derived from the play history rather than from wall-clock time in the app: opening
+     * the app and reading the list is not listening. Sums the known durations of the last
+     * dozen songs, which is the honest order of magnitude without keeping a timer running.
+     */
+    private String listeningTimeReport() {
+        try {
+            long ms = 0;
+            for (String uri : Recent.all(this)) {
+                for (Track t : libraryAll) {
+                    if (uri.equals(t.localUri)) {
+                        ms += Math.max(0, t.durationMs);
+                        break;
+                    }
+                }
+            }
+            if (ms <= 0) return "";
+            long minutes = ms / 60000L;
+            if (minutes < 60) return " \u00b7 about " + minutes + " min listened";
+            return " \u00b7 about " + (minutes / 60) + " h " + (minutes % 60) + " min listened";
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
     private void showLibraryInfo() {
         final int count = libraryAll.size();
         io.execute(() -> {
@@ -290,7 +317,7 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
                         : String.format(Locale.US, "%.0f MB", total / (1024.0 * 1024));
                 MenuSheet.show(this, "Library info",
                         count + (count == 1 ? " song" : " songs") + " \u00b7 " + size
-                                + " in Music/Cartify",
+                                + " in Music/Cartify" + listeningTimeReport(),
                         new MenuSheet.Item(R.drawable.ic_close, "Close", () -> {
                         }));
             });
