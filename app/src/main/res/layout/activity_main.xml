@@ -800,6 +800,58 @@
         android:focusable="false" />
 
     <!-- bottom nav -->
+    <!-- One transient message row shared by every tab.
+
+         The status line lives inside the home pane, so a prompt posted there was invisible
+         from the library. Anything that needs an answer (an undo, a failure worth acting
+         on) shows here instead, where it floats above whichever tab is open. -->
+    <LinearLayout
+        android:id="@+id/snackBar"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:layout_marginStart="16dp"
+        android:layout_marginEnd="16dp"
+        android:layout_marginBottom="104dp"
+        android:background="@drawable/bg_sheet"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="16dp"
+        android:paddingTop="12dp"
+        android:paddingEnd="10dp"
+        android:paddingBottom="12dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/snackText"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:maxLines="2"
+            android:ellipsize="end"
+            android:textColor="@color/text_primary"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/snackAction"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="12dp"
+            android:background="@drawable/bg_chip"
+            android:gravity="center"
+            android:paddingStart="14dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="14dp"
+            android:paddingBottom="8dp"
+            android:text="UNDO"
+            android:textColor="@color/accent"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+    </LinearLayout>
+
     <LinearLayout
         android:id="@+id/bottomBar"
         android:layout_width="match_parent"

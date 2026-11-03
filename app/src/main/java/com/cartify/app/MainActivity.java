@@ -119,6 +119,11 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
     private TextView selectionCount;
     private LinearLayout libraryHeader;
 
+    /** Transient message row shared by every tab; see {@link #showSnack}. */
+    private View snackBar;
+    private TextView snackText;
+    private TextView snackAction;
+
     private View miniPlayer;
     private ImageView miniArt;
     private TextView miniTitle;
@@ -483,6 +488,11 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         findViewById(R.id.selectionDelete).setOnClickListener(v -> confirmDeleteSelected());
 
         installBackHandling();
+
+        snackBar = findViewById(R.id.snackBar);
+        snackText = findViewById(R.id.snackText);
+        snackAction = findViewById(R.id.snackAction);
+        if (snackBar != null) snackBar.setOnClickListener(v -> hideSnack());
 
         miniPlayer = findViewById(R.id.miniPlayer);
         miniArt = findViewById(R.id.miniArt);
@@ -1737,20 +1747,117 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
             toast("Nothing to delete");
             return;
         }
+        // Ten seconds of grace before the file is really gone.
+        //
+        // Deleting a song was the one irreversible action in the app, and the
+        // confirmation sheet only protects against a mis-tap on the row above it,
+        // not against picking the wrong song from a long list. Holding the delete
+        // briefly makes it undoable without any new screen: the row disappears now,
+        // and a toast offers to put it back.
         final String uri = track.localUri;
-        io.execute(() -> {
-            boolean removed = LibraryStore.delete(this, uri);
-            main.post(() -> {
-                if (removed) {
-                    onSongRemoved(track, uri);
-                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                    // The file was saved by an earlier install, so only the system can delete it.
-                    requestSystemDelete(track, uri);
-                } else {
-                    toast("Could not delete \"" + track.title + "\"");
-                }
-            });
+        final Track snapshot = track;
+        final boolean[] undone = {false};
+        onSongRemoved(snapshot, uri);
+        toastUndo("Deleted \"" + track.title + "\"", () -> {
+            undone[0] = true;
+            restoreDeleted(snapshot);
         });
+        main.postDelayed(() -> {
+            if (undone[0]) return;
+            io.execute(() -> {
+                boolean removed = LibraryStore.delete(this, uri);
+                main.post(() -> {
+                    if (!removed && Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                        // The file was saved by an earlier install, so only the
+                        // system can delete it.
+                        requestSystemDelete(snapshot, uri);
+                    } else if (!removed) {
+                        toast("Could not delete \"" + snapshot.title + "\"");
+                    }
+                    // Now that the window has closed, playlist entries that point at
+                    // this file can go too; before this they had to stay so an undo
+                    // could put the song back where it was.
+                    if (removed) pruneFromPlaylists(uri);
+                });
+            });
+        }, 10000L);
+    }
+
+    /**
+     * Puts a song back into the visible library after an undo.
+     *
+     * The file was never touched, so nothing has to be restored on disk: the row
+     * simply comes back into the list. Playlists were not pruned until the grace
+     * window expires, which is why they are untouched here too.
+     */
+    private void restoreDeleted(Track track) {
+        libraryAll.add(0, track);
+        applyLibraryFilter();
+        toast("Restored \"" + track.title + "\"");
+    }
+
+    /**
+     * A toast with one action attached.
+     *
+     * Android has no action-toast API, so this inflates the same row as a plain
+     * toast and wires the action text by hand. Long duration because the whole
+     * point is to give the user time to react.
+     */
+    /**
+     * Shows a message that can be acted on, for a few seconds.
+     *
+     * Replaces the status-line trick used for the first version of undo: the status
+     * line is inside the home pane, so the prompt was invisible from the library,
+     * which is exactly where deletions happen. This floats above the tab bar instead
+     * and is reachable from every screen.
+     */
+    private void showSnack(String message, String actionLabel, Runnable action) {
+        if (snackBar == null) return;
+        snackText.setText(message);
+        if (actionLabel != null && action != null) {
+            snackAction.setText(actionLabel);
+            snackAction.setVisibility(View.VISIBLE);
+            snackAction.setOnClickListener(v -> {
+                hideSnack();
+                action.run();
+            });
+        } else {
+            snackAction.setVisibility(View.GONE);
+            snackAction.setOnClickListener(null);
+        }
+        snackBar.setVisibility(View.VISIBLE);
+        snackBar.setAlpha(0f);
+        snackBar.setTranslationY(16f * getResources().getDisplayMetrics().density);
+        snackBar.animate().alpha(1f).translationY(0f).setDuration(180).start();
+    }
+
+    private void hideSnack() {
+        if (snackBar == null || snackBar.getVisibility() != View.VISIBLE) return;
+        snackBar.animate().alpha(0f).setDuration(140)
+                .withEndAction(() -> snackBar.setVisibility(View.GONE)).start();
+    }
+
+    private void toastUndo(String message, Runnable action) {
+        // A toast cannot be tapped, so claiming "UNDO" in one would be a lie. The
+        // status line is already on screen, already styled as the app talking, and
+        // is a real view that can take a click for the length of the window.
+        undoAction = action;
+        showSnack(message, "UNDO", this::undoPendingDelete);
+        main.removeCallbacks(clearUndo);
+        main.postDelayed(clearUndo, 10000L);
+    }
+
+    /** The action a tap on the mini player's undo affordance would run. */
+    private Runnable undoAction;
+    private final Runnable clearUndo = () -> {
+        undoAction = null;
+        hideSnack();
+    };
+
+    private void undoPendingDelete() {
+        Runnable a = undoAction;
+        undoAction = null;
+        if (a != null) a.run();
     }
 
     /** Android 11+: hand the deletion to the system consent dialog. */
@@ -1768,9 +1875,10 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
 
     private void onSongRemoved(Track track, String uri) {
         detachFromQueue(uri);
-        pruneFromPlaylists(uri);
-        toast("Deleted \"" + track.title + "\"");
-        refreshLibrary();
+        // Playlists are pruned by the deferred delete, after the undo window; doing
+        // it here would make an undo unable to restore the playlist entries.
+        libraryAll.remove(track);
+        applyLibraryFilter();
     }
 
     /** Stop a deleted file from being played out of a queue that no longer owns it. */
@@ -1827,8 +1935,11 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         pendingDeleteTrack = null;
         pendingDeleteUri = "";
         if (track == null) return;
-        if (resultCode == RESULT_OK) onSongRemoved(track, uri);
-        else toast("Delete cancelled");
+        if (resultCode == RESULT_OK) {
+            pruneFromPlaylists(uri);
+            toast("Deleted \"" + track.title + "\"");
+            refreshLibrary();
+        } else toast("Delete cancelled");
     }
 
     private int indexOfUri(String uri) {
