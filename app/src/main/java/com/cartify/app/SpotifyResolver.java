@@ -27,6 +27,40 @@ public final class SpotifyResolver {
     private static final String UA = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36";
 
+    /**
+     * Recently resolved collections, keyed by "type:id".
+     *
+     * Pasting the same link twice, or opening a playlist, backing out and opening it again,
+     * used to re-download the whole embed page every time. Each of those requests is one
+     * more chance to be rate limited, so the cheapest defence is to not ask at all when the
+     * answer is already in hand. Kept small and short-lived: Spotify metadata does change.
+     */
+    private static final int CACHE_MAX = 24;
+    private static final long CACHE_TTL_MS = 10 * 60 * 1000L;
+    private static final java.util.Map<String, CachedCollection> PAGE_CACHE =
+            java.util.Collections.synchronizedMap(
+                    new java.util.LinkedHashMap<String, CachedCollection>(16, 0.75f, true) {
+                        @Override
+                        protected boolean removeEldestEntry(
+                                java.util.Map.Entry<String, CachedCollection> eldest) {
+                            return size() > CACHE_MAX;
+                        }
+                    });
+
+    private static final class CachedCollection {
+        final SpotifyCollection collection;
+        final long at;
+
+        CachedCollection(SpotifyCollection collection) {
+            this.collection = collection;
+            this.at = System.currentTimeMillis();
+        }
+
+        boolean fresh() {
+            return System.currentTimeMillis() - at < CACHE_TTL_MS;
+        }
+    }
+
     private SpotifyResolver() {
     }
 
@@ -42,6 +76,14 @@ public final class SpotifyResolver {
         }
         String type = m.group(1).toLowerCase();
         String id = m.group(2);
+
+        String cacheKey = type + ":" + id;
+        CachedCollection cached = PAGE_CACHE.get(cacheKey);
+        if (cached != null && cached.fresh()) {
+            // Return a copy: callers attach artwork to the tracks, and sharing the list
+            // would let one screen's artwork edits leak into the next open.
+            return copyOf(cached.collection);
+        }
 
         String html = httpGet("https://open.spotify.com/embed/" + type + "/" + id);
         JSONObject next = extractNextData(html);
@@ -87,6 +129,7 @@ public final class SpotifyResolver {
         }
 
         if (out.tracks.isEmpty()) throw new IllegalStateException("No tracks found in that link");
+        PAGE_CACHE.put(cacheKey, new CachedCollection(out));
         return out;
     }
 
@@ -354,6 +397,25 @@ public final class SpotifyResolver {
         } finally {
             c.disconnect();
         }
+    }
+
+    /** Deep-enough copy so a cached collection is never mutated by a caller. */
+    private static SpotifyCollection copyOf(SpotifyCollection src) {
+        SpotifyCollection out = new SpotifyCollection();
+        out.type = src.type;
+        out.name = src.name;
+        out.coverUrl = src.coverUrl;
+        out.sourceUrl = src.sourceUrl;
+        for (Track t : src.tracks) {
+            Track c = new Track(t.title, t.artist, t.coverUrl);
+            c.id = t.id;
+            c.album = t.album;
+            c.pageUrl = t.pageUrl;
+            c.durationMs = t.durationMs;
+            c.addedAt = t.addedAt;
+            out.tracks.add(c);
+        }
+        return out;
     }
 
     private static String firstNonEmpty(String... values) {
