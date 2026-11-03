@@ -710,6 +710,10 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
     // ---------------------------------------------------------------- resolving
 
     private void resolve() {
+        if (queueRunning) {
+            toast("A download is still running. Wait for it to finish, or cancel it.");
+            return;
+        }
         String raw = linkInput.getText().toString().trim();
         if (TextUtils.isEmpty(raw)) {
             toast("Paste a Spotify link first");
@@ -821,11 +825,23 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         startDownload(failed);
     }
 
+    /**
+     * True while a queue is running.
+     *
+     * Cancellation is keyed by row index, so replacing the list mid-queue shifted those
+     * indices and could cancel a completely different song. Resolving a new link is now
+     * refused until the queue drains, which keeps the mapping honest. The alternative —
+     * keying every progress and cancel event by a stable track id — is a larger change to
+     * the service protocol, and this removes the failure mode today.
+     */
+    private volatile boolean queueRunning;
+
     private void startDownload(List<Track> tracks) {
         if (tracks.isEmpty()) {
             toast("Nothing to download");
             return;
         }
+        queueRunning = true;
         for (Track t : tracks) {
             t.status = Track.QUEUED;
             t.progress = 0;
@@ -871,6 +887,7 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
     }
 
     private void cancelAllDownloads() {
+        queueRunning = false;
         startService(new Intent(this, DownloadService.class).setAction(DownloadService.ACTION_CANCEL));
         for (int i = 0; i < adapter.getItemCount(); i++) {
             Track t = adapter.items().get(i);
@@ -927,6 +944,7 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
             summary = completed + " saved \u00b7 " + failed + " failed";
         }
         statusText.setText(summary);
+        queueRunning = false;
         for (int i = 0; i < adapter.getItemCount(); i++) {
             Track t = adapter.items().get(i);
             if (t.status == Track.QUEUED || t.status == Track.ACTIVE) adapter.reset(i);
