@@ -109,9 +109,19 @@ public final class Updater {
         }
     }
 
+    /**
+     * True when {@code remote} is a later version than {@code local}.
+     *
+     * Compares every segment rather than stopping at the shorter array: a tag like
+     * 1.0.1.2 used to compare equal to 1.0.1 because the loop only reached the third
+     * element, so a four-part hotfix would never have been offered to anyone.
+     */
     private static boolean isNewer(int[] remote, int[] local) {
-        for (int i = 0; i < Math.min(remote.length, local.length); i++) {
-            if (remote[i] != local[i]) return remote[i] > local[i];
+        int n = Math.max(remote.length, local.length);
+        for (int i = 0; i < n; i++) {
+            int r = i < remote.length ? remote[i] : 0;
+            int l = i < local.length ? local[i] : 0;
+            if (r != l) return r > l;
         }
         return false;
     }
