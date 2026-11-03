@@ -68,6 +68,9 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
     private TextView collectionMeta;
     private Button downloadAllButton;
     private RecyclerView list;
+    private RecyclerView recRail;
+    private CardAdapter cardAdapter;
+    private TextView recHeader;
     private LinearLayout emptyState;
 
     private LinearLayout homeView;
@@ -364,6 +367,19 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         collectionMeta = findViewById(R.id.collectionMeta);
         downloadAllButton = findViewById(R.id.downloadAllButton);
         list = findViewById(R.id.list);
+        recRail = findViewById(R.id.recRail);
+        recHeader = findViewById(R.id.recHeader);
+        if (recRail != null) {
+            // A horizontal rail needs a horizontal layout manager; the default vertical one
+            // would stack the cards down the page and break the shelf entirely.
+            recRail.setLayoutManager(new LinearLayoutManager(this,
+                    LinearLayoutManager.HORIZONTAL, false));
+            cardAdapter = new CardAdapter(track -> {
+                List<Track> one = single(track);
+                startDownload(one);
+            });
+            recRail.setAdapter(cardAdapter);
+        }
         emptyState = findViewById(R.id.emptyState);
 
         homeView = findViewById(R.id.homeView);
@@ -831,6 +847,20 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
     private void showCollection(SpotifyCollection resolved) {
         collection = resolved;
         adapter.submit(resolved.tracks);
+        // The shelf mirrors the rows: same songs, shown as artwork first, which is how
+        // Spotify's home screen leads. Hidden when there is only one track, where a rail
+        // of one card adds nothing over the row.
+        if (cardAdapter != null && recRail != null) {
+            if (resolved.tracks.size() > 1) {
+                cardAdapter.submit(resolved.tracks);
+                recRail.setVisibility(View.VISIBLE);
+                if (recHeader != null) recHeader.setVisibility(View.VISIBLE);
+            } else {
+                cardAdapter.submit(new ArrayList<>());
+                recRail.setVisibility(View.GONE);
+                if (recHeader != null) recHeader.setVisibility(View.GONE);
+            }
+        }
         // Rows appear without a cascade animation. The old code set a layout animation
         // and cleared it on a 900 ms timer, which crashed with a NullPointerException
         // inside ViewGroup.dispatchDraw when the timer fired mid-draw:

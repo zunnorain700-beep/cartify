@@ -286,6 +286,26 @@
                         android:textStyle="bold" />
                 </LinearLayout>
 
+                <!-- Album-style shelf, the way Spotify home leads with artwork. -->
+                <TextView
+                    android:id="@+id/recHeader"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:text="Recommended for you"
+                    android:textColor="@color/text_primary"
+                    android:textSize="15sp"
+                    android:textStyle="bold" />
+
+                <androidx.recyclerview.widget.RecyclerView
+                    android:id="@+id/recRail"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="10dp"
+                    android:clipToPadding="false"
+                    android:orientation="horizontal"
+                    android:scrollbars="none" />
+
                 <androidx.recyclerview.widget.RecyclerView
                     android:id="@+id/list"
                     android:layout_width="match_parent"
