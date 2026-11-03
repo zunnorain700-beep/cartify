@@ -88,6 +88,48 @@ public final class MusicSearch {
     }
 
     /**
+     * Fresh suggestions for the empty search screen.
+     *
+     * Uses Deezer's public chart, the closest keyless equivalent to Spotify's home feed.
+     * Cached for half an hour so relaunching does not hammer the endpoint, and failures
+     * stay silent: an empty home screen is better than an error dialog on launch.
+     */
+    public static void recommendations(final Callback callback) {
+        POOL.execute(() -> {
+            List<Track> out = new ArrayList<>();
+            try {
+                long now = System.currentTimeMillis();
+                if (chartCache != null && now - chartAt < CHART_TTL_MS) {
+                    out.addAll(chartCache);
+                } else {
+                    JSONObject root = new JSONObject(
+                            httpGet("https://api.deezer.com/chart/0/tracks?limit=" + LIMIT));
+                    JSONArray data = root.optJSONArray("data");
+                    if (data != null) {
+                        for (int i = 0; i < data.length(); i++) {
+                            Track t = deezerTrack(data.optJSONObject(i));
+                            if (t != null) out.add(t);
+                        }
+                    }
+                    chartCache = new ArrayList<>(out);
+                    chartAt = now;
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "chart fetch failed", e);
+            }
+            final List<Track> result = out;
+            if (callback == null) return;
+            new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                if (!result.isEmpty()) callback.onResults(result);
+            });
+        });
+    }
+
+    private static List<Track> chartCache;
+    private static long chartAt = 0L;
+    private static final long CHART_TTL_MS = 30 * 60 * 1000L;
+
+    /**
      * Searches Deezer tracks and ranks them for the query the user actually typed.
      *
      * Deezer's own ordering is title-relevance, so "coldplay" surfaced songs literally

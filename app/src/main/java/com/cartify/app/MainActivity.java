@@ -154,6 +154,7 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         main.post(miniTicker);
         playIntro();
         checkForUpdates();
+        loadRecommendations();
     }
 
     // ---------------------------------------------------------------- updates
@@ -737,6 +738,34 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
      * matching and encoding path a Spotify link uses. Nothing in the download pipeline
      * needed to change to support this.
      */
+    /**
+     * Fills the empty search screen with suggested music.
+     *
+     * These are ordinary download rows, so a suggestion can be downloaded with the same
+     * tap a search result uses. Loaded once per launch and only when the list is empty, so
+     * it never overwrites something the user just searched for.
+     */
+    private void loadRecommendations() {
+        if (adapter == null || adapter.getItemCount() > 0) return;
+        MusicSearch.recommendations(new MusicSearch.Callback() {
+            @Override
+            public void onResults(List<Track> tracks) {
+                if (isFinishing() || adapter.getItemCount() > 0) return;
+                SpotifyCollection suggested = new SpotifyCollection();
+                suggested.name = "Recommended for you";
+                suggested.type = "search";
+                suggested.tracks.addAll(tracks);
+                showCollection(suggested);
+                setBusy(false, "Recommended for you · tap Download");
+            }
+
+            @Override
+            public void onFailed(String message) {
+                // Silent: an empty home screen is fine, an error on launch is not.
+            }
+        });
+    }
+
     private void runSearch(EditText input) {
         if (input == null) return;
         if (queueRunning) {
