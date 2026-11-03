@@ -1117,6 +1117,13 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
                 ? ("Playlist \u00b7 " + resolved.tracks.size() + " tracks")
                 : "Single track";
         collectionMeta.setText(kind + " \u00b7 saved as MP3");
+        // Keeping a resolved album or playlist was impossible before: the tracks were
+        // downloaded, but the grouping itself lived only on Spotify. One long-press
+        // turns the open collection into a local playlist.
+        collectionName.setOnLongClickListener(v -> {
+            showCollectionMenu();
+            return true;
+        });
         collectionCover.setImageDrawable(null);
         if (!resolved.coverUrl.isEmpty()) {
             Track probe = new Track(resolved.name, "", resolved.coverUrl);
@@ -1131,6 +1138,57 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         SpotifyResolver.attachTrackArtwork(resolved, adapter::notifyDataSetChanged);
         // Resolve the first uploads now so tapping Download starts transferring at once.
         DownloadEngine.prewarm(getApplicationContext(), resolved.tracks);
+    }
+
+    /** Actions for the open collection: keep it, or download what is missing. */
+    private void showCollectionMenu() {
+        if (collection == null) return;
+        List<MenuSheet.Item> items = new ArrayList<>();
+        items.add(new MenuSheet.Item(R.drawable.ic_queue, "Save as playlist",
+                this::saveCollectionAsPlaylist));
+        items.add(new MenuSheet.Item(R.drawable.ic_download, "Download all",
+                () -> startDownload(collection.tracks)));
+        MenuSheet.show(this, collection.name, collection.tracks.size()
+                + (collection.tracks.size() == 1 ? " track" : " tracks"),
+                items.toArray(new MenuSheet.Item[0]));
+    }
+
+    /**
+     * Copies the open collection into a local playlist.
+     *
+     * Only songs that are actually on the device are added: a playlist entry points at
+     * a file, so queuing the ones that were never downloaded would create rows that
+     * cannot play. The toast says how many were skipped, so an album that is half
+     * downloaded does not look like it silently lost half its songs.
+     */
+    private void saveCollectionAsPlaylist() {
+        if (collection == null) return;
+        io.execute(() -> {
+            Playlist p = new Playlist(collection.name);
+            int added = 0;
+            int missing = 0;
+            for (Track t : new ArrayList<>(collection.tracks)) {
+                LibraryStore.Item hit = LibraryStore.findSaved(this, t.title, t.artist);
+                if (hit == null) {
+                    missing++;
+                    continue;
+                }
+                t.localUri = hit.uri;
+                if (p.add(t)) added++;
+            }
+            final int got = added;
+            final int skipped = missing;
+            if (got == 0) {
+                main.post(() -> toast("Nothing downloaded from this list yet"));
+                return;
+            }
+            PlaylistStore.save(this, p);
+            main.post(() -> {
+                refreshPlaylists();
+                toast("Saved \"" + p.name + "\" \u00b7 " + got
+                        + (skipped > 0 ? ", " + skipped + " not downloaded" : ""));
+            });
+        });
     }
 
     /**
