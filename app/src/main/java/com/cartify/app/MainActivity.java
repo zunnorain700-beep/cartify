@@ -542,7 +542,7 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
     private static final int TAB_PLAYLISTS = 2;
 
     /** Library opens first: the songs you already own matter more than the paste box. */
-    private int activeTab = TAB_LIBRARY;
+    private int activeTab = TAB_HOME;
 
     /**
      * Back leaves selection mode before it leaves the screen.

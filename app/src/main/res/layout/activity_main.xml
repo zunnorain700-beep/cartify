@@ -59,8 +59,7 @@
                 android:id="@+id/homeView"
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
-                android:orientation="vertical"
-                android:visibility="gone">
+                android:orientation="vertical">
 
                 <LinearLayout
                     android:layout_width="match_parent"
@@ -339,7 +338,8 @@
                 android:layout_width="match_parent"
                 android:layout_height="match_parent"
                 android:orientation="vertical"
-                android:paddingBottom="94dp">
+                android:paddingBottom="94dp"
+                android:visibility="gone">
 
                 <LinearLayout
                     android:id="@+id/libraryHeader"
@@ -761,7 +761,7 @@
             <ImageView
                 android:layout_width="19dp"
                 android:layout_height="19dp"
-                android:contentDescription="Library"
+                android:contentDescription="Offline music"
                 android:src="@drawable/ic_library"
                 android:tint="@color/accent" />
 
@@ -769,7 +769,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_marginStart="6dp"
-                android:text="Library"
+                android:text="Offline"
                 android:textColor="@color/accent"
                 android:textSize="12sp"
                 android:textStyle="bold" />
@@ -812,18 +812,18 @@
             <ImageView
                 android:layout_width="19dp"
                 android:layout_height="19dp"
-                android:contentDescription="Download songs"
-                android:src="@drawable/ic_download"
+                android:contentDescription="Search"
+                android:src="@drawable/ic_search"
                 android:tint="@color/text_secondary" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="5dp"
+                android:layout_marginStart="6dp"
                 android:maxLines="1"
-                android:text="Download songs"
+                android:text="Search"
                 android:textColor="@color/text_secondary"
-                android:textSize="11sp" />
+                android:textSize="12sp" />
         </LinearLayout>
     </LinearLayout>
 
