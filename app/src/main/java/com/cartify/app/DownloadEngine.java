@@ -527,6 +527,29 @@ public final class DownloadEngine {
         task.bind("");
         task.check();
         String out = res == null ? null : res.getOut();
+        // An empty answer is almost never "the song does not exist": it is a search
+        // that was throttled or lost its connection, and it reads exactly like a
+        // genuine miss to the user. One retry after a pause costs two seconds and
+        // turns a false "No match found" into a download.
+        if (out == null || out.trim().isEmpty()) {
+            Log.w(TAG, "empty search, retrying: " + query);
+            try {
+                Thread.sleep(1500);
+            } catch (InterruptedException ie) {
+                Thread.currentThread().interrupt();
+            }
+            task.check();
+            String retryId = "cartify-pick2-" + System.nanoTime();
+            task.bind(retryId);
+            try {
+                res = YoutubeDL.getInstance().execute(search, retryId, null);
+            } catch (Throwable e) {
+                task.check();
+            } finally {
+                task.bind("");
+            }
+            out = res == null ? null : res.getOut();
+        }
         if (out == null || out.trim().isEmpty()) {
             throw new Failure("search", "No match found for this song");
         }
@@ -767,7 +790,10 @@ public final class DownloadEngine {
      */
     private static boolean fuzzyWordPresent(String wanted, String candidate) {
         if (wanted.length() < 5) return false;
-        int allowed = wanted.length() >= 8 ? 2 : 1;
+        // Two edits from six letters up. Transliteration swaps are usually one
+        // character (a/e, s/sh) but sometimes two (j/ch): "Majale" vs "Machale"
+        // was rejected at one edit, and that was the only upload of the song.
+        int allowed = wanted.length() >= 6 ? 2 : 1;
         for (String word : candidate.split(" ")) {
             if (word.isEmpty()) continue;
             if (Math.abs(word.length() - wanted.length()) > allowed) continue;
