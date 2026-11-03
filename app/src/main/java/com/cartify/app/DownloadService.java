@@ -319,9 +319,13 @@ public class DownloadService extends Service implements ProgressBus.Listener {
         PendingIntent cancel = PendingIntent.getService(this, 1,
                 new Intent(this, DownloadService.class).setAction(ACTION_CANCEL),
                 PendingIntent.FLAG_UPDATE_CURRENT | pendingFlag());
+        // The title carries the percentage as well as the count: a collapsed notification
+        // shows only the title, so "3 of 40" alone says nothing about how long is left.
+        int capped = Math.min(done, Math.max(total, 1));
+        int pct = total <= 0 ? 0 : (int) Math.round(capped * 100.0 / total);
         return new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle("Cartify — " + Math.min(done, total) + " of " + total)
+                .setContentTitle("Cartify — " + capped + " of " + total + " (" + pct + "%)")
                 .setContentText(text)
                 .setContentIntent(open)
                 .addAction(0, "Cancel all", cancel)
