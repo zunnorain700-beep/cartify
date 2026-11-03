@@ -53,6 +53,17 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.VH> {
     /** Payload for a bind that only needs to repaint the selection badge and tint. */
     private static final Object PAYLOAD_SELECTION = new Object();
 
+    /**
+     * Artist section headers, when the host asks for them.
+     *
+     * A library of three hundred songs is browsable by artist and unusable as a flat
+     * wall. Headers are rows in the same list rather than a second adapter, so the
+     * existing selection, drag and playing-highlight logic keep working unchanged:
+     * they simply skip rows whose uri starts with {@link #HEADER}.
+     */
+    private boolean grouped;
+    private final List<String> headers = new ArrayList<>();
+
     private final List<Track> items = new ArrayList<>();
     private final Actions actions;
     private final Set<String> selected = new LinkedHashSet<>();
@@ -66,8 +77,25 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.VH> {
         this.actions = actions;
     }
 
+    /** Turns artist section headers on or off and rebuilds the visible list. */
+    public void setGrouped(boolean on, List<Track> source) {
+        grouped = on;
+        if (source != null) submit(source);
+    }
+
+    public boolean isGrouped() {
+        return grouped;
+    }
+
+    /** The artist a row belongs under; "Unknown artist" keeps blanks together. */
+    private static String groupKey(Track t) {
+        String artist = t == null || t.artist == null ? "" : t.artist.trim();
+        return artist.isEmpty() ? "Unknown artist" : artist;
+    }
+
     public void submit(List<Track> tracks) {
         items.clear();
+        headers.clear();
         if (tracks != null) items.addAll(tracks);
         // Drop selections whose song is no longer in the visible list, so the count in the
         // action bar never claims songs the user cannot see.
@@ -80,7 +108,29 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.VH> {
                 if (selected.isEmpty()) selecting = false;
             }
         }
+        rebuildHeaders();
         notifyDataSetChanged();
+    }
+
+    /**
+     * Marks the row index where each artist first appears.
+     *
+     * Built only while grouped, and kept in step with every submit, so a delete or a
+     * filter can never leave a header pointing at a song that has moved.
+     */
+    private void rebuildHeaders() {
+        headers.clear();
+        if (!grouped) return;
+        String last = null;
+        for (Track t : items) {
+            String key = groupKey(t);
+            if (key.equals(last)) {
+                headers.add(null);
+            } else {
+                headers.add(key);
+                last = key;
+            }
+        }
     }
 
     public List<Track> items() {
@@ -298,6 +348,14 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.VH> {
     @Override
     public void onBindViewHolder(@NonNull VH h, int position) {
         Track t = items.get(position);
+        // The section label sits inside the row, not as a separate list item: a second
+        // view type would shift every index and break selection, drag and the play
+        // callback, which all address songs by position.
+        String group = position < headers.size() ? headers.get(position) : null;
+        if (h.header != null) {
+            h.header.setVisibility(group == null ? View.GONE : View.VISIBLE);
+            if (group != null) h.header.setText(group);
+        }
         h.title.setText(t.title);
         long secs = t.durationMs / 1000;
         String sub = (t.artist == null || t.artist.isEmpty() ? "Unknown artist" : t.artist)
@@ -460,6 +518,8 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.VH> {
         final TextView title;
         final TextView subtitle;
         final ImageButton more;
+        /** Artist section label, shown on the first row of each group. */
+        final TextView header;
 
         VH(@NonNull View v) {
             super(v);
@@ -471,6 +531,7 @@ public class SongAdapter extends RecyclerView.Adapter<SongAdapter.VH> {
             title = v.findViewById(R.id.songTitle);
             subtitle = v.findViewById(R.id.songSubtitle);
             more = v.findViewById(R.id.songMore);
+            header = v.findViewById(R.id.songArtistHeader);
         }
     }
 }

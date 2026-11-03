@@ -36,7 +36,7 @@ Working list for the 3 November 2026 session. Ordered by value, not by effort.
 - [x] Undo for a single-song delete (keep the file for ten seconds)
 - [x] Warn before deleting a song that is inside playlists
 - [x] Remember the last scroll position per tab
-- [ ] Artist grouping in the library
+- [x] Artist grouping in the library
 
 - [x] Cache artwork on disk so a restart does not re-download every cover`n`n## Ideas worth evaluating
 

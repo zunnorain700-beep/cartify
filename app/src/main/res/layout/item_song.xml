@@ -9,6 +9,23 @@
     android:clipToOutline="true"
     android:elevation="2dp">
 
+    <TextView
+        android:id="@+id/songArtistHeader"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:letterSpacing="0.06"
+        android:paddingStart="6dp"
+        android:paddingTop="4dp"
+        android:paddingEnd="6dp"
+        android:paddingBottom="2dp"
+        android:textAllCaps="true"
+        android:textColor="@color/accent"
+        android:textSize="11sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
+
     <ImageView
         android:id="@+id/songRowBackdrop"
         android:layout_width="match_parent"

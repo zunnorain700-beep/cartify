@@ -167,6 +167,11 @@ public final class LibraryStore {
                 it.artist = c.getString(2);
                 it.album = c.getString(3);
                 it.duration = c.getLong(4);
+            // Some files report a duration that cannot be real: a ripped VBR header or
+            // a truncated tag gave one row 686 minutes for a three-minute song. Anything
+            // past an hour is treated as unknown so the row shows no time rather than a
+            // number that is obviously wrong, and the player still seeks by real time.
+            if (it.duration < 0 || it.duration > 60L * 60L * 1000L) it.duration = 0L;
                 it.displayName = c.getString(5);
                 it.addedAt = c.getLong(6);
                 out.add(it);

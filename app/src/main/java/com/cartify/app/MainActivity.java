@@ -100,6 +100,8 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
 
     /** Library ordering: 0 = newest first, 1 = title, 2 = artist. */
     private int librarySort = 0;
+    /** Whether the library shows artist section headers. */
+    private boolean libraryGrouped = false;
 
     /**
      * First visible row per tab.
@@ -467,6 +469,13 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         librarySortButton = findViewById(R.id.librarySort);
         if (librarySortButton != null) {
             librarySortButton.setOnClickListener(v -> cycleLibrarySort());
+            // Grouping only makes sense with the artist ordering, so turning it on
+            // switches the sort with it instead of showing headers in a list sorted
+            // by date, where every artist would repeat.
+            librarySortButton.setOnLongClickListener(v -> {
+                setLibraryGrouped(!libraryGrouped);
+                return true;
+            });
         }
         View appMenu = findViewById(R.id.appMenu);
         if (appMenu != null) appMenu.setOnClickListener(this::showAppMenu);
@@ -1458,7 +1467,7 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
             }
         }
         sortLibrary(shown);
-        songAdapter.submit(shown);
+        songAdapter.setGrouped(libraryGrouped, shown);
         String suffix = libraryQuery.isEmpty() ? "" : " Â· filtered";
         libraryStatus.setText(libraryAll.size() + " song" + (libraryAll.size() == 1 ? "" : "s") + suffix);
         updateLibraryEmpty();
@@ -1490,9 +1499,36 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         }
     }
 
+    /**
+     * Turns artist section headers on or off.
+     *
+     * Reached by long-pressing the sort chip: headers are a way of reading the same
+     * list, not a different one, so they belong next to the ordering control rather
+     * than buried in the app menu.
+     */
+    private void setLibraryGrouped(boolean on) {
+        libraryGrouped = on;
+        if (on) librarySort = 2;
+        if (librarySortButton != null) {
+            librarySortButton.setText(libraryGrouped ? "Grouped"
+                    : librarySort == 1 ? "Title" : librarySort == 2 ? "Artist" : "Newest");
+            librarySortButton.setTextColor(getColor(R.color.accent));
+            librarySortButton.setAlpha(0.6f);
+            librarySortButton.animate().alpha(1f).setDuration(200).start();
+        }
+        if (songAdapter != null) songAdapter.setGrouped(libraryGrouped, null);
+        applyLibraryFilter();
+    }
+
     /** Cycles Newest -> Title -> Artist -> Newest. */
     private void cycleLibrarySort() {
         librarySort = (librarySort + 1) % 3;
+        // Picking a different order while grouped would repeat artists down the
+        // page, so the headers switch themselves off rather than lie.
+        if (libraryGrouped && librarySort != 2) {
+            libraryGrouped = false;
+            if (songAdapter != null) songAdapter.setGrouped(false, null);
+        }
         if (librarySortButton != null) {
             librarySortButton.setText(librarySort == 1 ? "Title" : librarySort == 2 ? "Artist" : "Newest");
             librarySortButton.setTextColor(getColor(R.color.accent));
