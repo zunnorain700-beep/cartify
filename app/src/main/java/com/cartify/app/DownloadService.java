@@ -211,6 +211,21 @@ public class DownloadService extends Service implements ProgressBus.Listener {
                     ProgressBus.progress(index, 0, "Queued");
                     final long started = SystemClock.elapsedRealtime();
                     try {
+                        // A row that already points at a saved file is not downloaded
+                        // again. The UI marks those rows DONE before the queue starts, but
+                        // the check belongs here too: the service is the only place every
+                        // path goes through, and "saved" rows were being re-fetched when a
+                        // retry was started from a list that still held them.
+                        if (t.localUri != null && !t.localUri.isEmpty()
+                                && !cancelled && !task.isCancelled()) {
+                            completed.incrementAndGet();
+                            ProgressBus.finished(index, t.localUri, null);
+                            updateNotification(completed.get(), total,
+                                    "Saved already: " + t.title);
+                            // continue, not return: returning here would end this
+                            // worker thread and leave the rest of the queue unclaimed.
+                            continue;
+                        }
                         String uri = DownloadEngine.download(this, t, (percent, detail) -> {
                             ProgressBus.progress(index, percent, detail);
                             // Notification re-posts are not free and yt-dlp fires many per

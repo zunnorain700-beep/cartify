@@ -408,7 +408,30 @@ public final class DownloadEngine {
                     new ProgressFunction(listener, task, highWater));
         } catch (Throwable e) {
             task.check();
-            throw new Failure("download", "Could not download this track (" + describe(e) + ")");
+            // The library reports most failures as a non-zero exit code, but some are
+            // thrown instead: "Requested format is not available" arrived here and was
+            // reported as a plain download failure, so the retry loop never switched
+            // client chain and the track stayed failed. Classifying the message here
+            // makes both paths retry the same way.
+            String msg = describe(e);
+            String low = msg.toLowerCase(Locale.US);
+            boolean formatMiss = low.contains("requested format is not available")
+                    || low.contains("no video formats found")
+                    || low.contains("requested format not available");
+            boolean transientNet = low.contains("remote end closed connection")
+                    || low.contains("connection reset")
+                    || low.contains("connection aborted")
+                    || low.contains("timed out")
+                    || low.contains("did not get any data blocks")
+                    || low.contains("unable to download video data")
+                    || low.contains("incomplete read");
+            if (formatMiss || transientNet) {
+                throw new Failure("format", "Could not download this track (" + msg + ")",
+                        false, true);
+            }
+            boolean stale = low.contains("403") || low.contains("sign in")
+                    || low.contains("unable to extract");
+            throw new Failure("download", "Could not download this track (" + msg + ")", stale);
         }
         task.bind("");
         task.check();
