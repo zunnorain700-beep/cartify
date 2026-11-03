@@ -100,6 +100,18 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
 
     /** Library ordering: 0 = newest first, 1 = title, 2 = artist. */
     private int librarySort = 0;
+
+    /**
+     * First visible row per tab.
+     *
+     * Switching to Playlists and back used to drop the reader at the top of a
+     * thousand-song library, which is the difference between the tab bar being
+     * useful and being something you avoid touching. Keyed by tab, so each keeps
+     * its own place. A download landing in the list can shift indices; the saved
+     * value is clamped on restore, so a stale index lands somewhere sensible
+     * instead of crashing.
+     */
+    private final int[] lastScroll = new int[3];
     private TextView librarySortButton;
 
     /** Bulk-selection chrome, shown in place of the library header while songs are picked. */
@@ -628,6 +640,7 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
     }
 
     private void showTab(int tab) {
+        rememberScroll();
         // Selection belongs to the library view; switching tabs drops it.
         if (songAdapter != null && songAdapter.isSelecting() && tab != TAB_LIBRARY) {
             songAdapter.clearSelection();
@@ -667,7 +680,41 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         }
 
         if (library) refreshLibrary();
+        restoreScroll(tab);
         syncNav();
+    }
+
+    /** Stores the scroll position of whatever tab is open right now. */
+    private void rememberScroll() {
+        if (activeTab < 0 || activeTab >= lastScroll.length) return;
+        RecyclerView target = activeTab == TAB_LIBRARY ? songsList
+                : activeTab == TAB_PLAYLISTS ? playlistsList : list;
+        if (target == null) return;
+        androidx.recyclerview.widget.RecyclerView.LayoutManager lm = target.getLayoutManager();
+        if (lm instanceof LinearLayoutManager) {
+            lastScroll[activeTab] = ((LinearLayoutManager) lm)
+                    .findFirstVisibleItemPosition();
+        }
+    }
+
+    /**
+     * Puts the list back where the user left it.
+     *
+     * Posted rather than called directly: the rows are submitted with a diff, so a
+     * scrollToPosition during the same frame would run before the adapter has the
+     * new items and would be discarded.
+     */
+    private void restoreScroll(int tab) {
+        if (tab < 0 || tab >= lastScroll.length) return;
+        final int pos = lastScroll[tab];
+        final RecyclerView target = tab == TAB_LIBRARY ? songsList
+                : tab == TAB_PLAYLISTS ? playlistsList : list;
+        if (target == null) return;
+        main.post(() -> {
+            if (target.getAdapter() == null) return;
+            int max = Math.max(0, target.getAdapter().getItemCount() - 1);
+            target.scrollToPosition(Math.min(Math.max(0, pos), max));
+        });
     }
 
     /**
@@ -692,6 +739,7 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
 
     /** The playlists pane: a shelf of playlists rather than a list of songs. */
     private void showPlaylistsTab() {
+        rememberScroll();
         activeTab = TAB_PLAYLISTS;
         hideKeyboard();
         View[] panes = {homeView, libraryView};

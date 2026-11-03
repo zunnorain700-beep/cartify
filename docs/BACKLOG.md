@@ -35,7 +35,7 @@ Working list for the 3 November 2026 session. Ordered by value, not by effort.
 - [x] Export a playlist as an .m3u file next to the MP3s
 - [ ] Undo for a single-song delete (keep the file for ten seconds)
 - [ ] Warn before deleting a song that is inside playlists
-- [ ] Remember the last scroll position per tab
+- [x] Remember the last scroll position per tab
 - [ ] Artist grouping in the library
 
 ## Ideas worth evaluating
