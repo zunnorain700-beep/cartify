@@ -298,7 +298,7 @@
                         android:paddingStart="14dp"
                         android:paddingEnd="14dp"
                         android:stateListAnimator="@null"
-                        android:text="Download"
+                        android:text="Download all"
                         android:textAllCaps="false"
                         android:textColor="@color/accent_ink"
                         android:textSize="12sp"
@@ -659,6 +659,88 @@
                     </LinearLayout>
                 </FrameLayout>
             </LinearLayout>
+
+            <!--
+                Downloads pane. Shows only work that is queued, running or failed, so it
+                answers "what is happening right now" without duplicating the library.
+            -->
+            <LinearLayout
+                android:id="@+id/downloadsView"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:orientation="vertical"
+                android:paddingBottom="94dp"
+                android:visibility="gone">
+
+                <LinearLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="14dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <TextView
+                        android:id="@+id/downloadsStatus"
+                        android:layout_width="0dp"
+                        android:layout_height="wrap_content"
+                        android:layout_weight="1"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="12sp" />
+
+                    <TextView
+                        android:id="@+id/downloadsClear"
+                        android:layout_width="wrap_content"
+                        android:layout_height="30dp"
+                        android:background="@drawable/bg_chip"
+                        android:gravity="center"
+                        android:paddingStart="12dp"
+                        android:paddingEnd="12dp"
+                        android:text="Clear finished"
+                        android:textColor="@color/text_secondary"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <FrameLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="0dp"
+                    android:layout_weight="1">
+
+                    <androidx.recyclerview.widget.RecyclerView
+                        android:id="@+id/downloadsList"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:layout_marginTop="12dp"
+                        android:clipToPadding="false"
+                        android:paddingBottom="24dp"
+                        android:scrollbars="none" />
+
+                    <LinearLayout
+                        android:id="@+id/downloadsEmpty"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:gravity="center"
+                        android:orientation="vertical"
+                        android:paddingBottom="80dp">
+
+                        <TextView
+                            android:layout_width="wrap_content"
+                            android:layout_height="wrap_content"
+                            android:text="Nothing downloading"
+                            android:textColor="@color/text_primary"
+                            android:textSize="15sp"
+                            android:textStyle="bold" />
+
+                        <TextView
+                            android:layout_width="250dp"
+                            android:layout_height="wrap_content"
+                            android:layout_marginTop="6dp"
+                            android:gravity="center"
+                            android:text="Tracks you start downloading appear here while they run, so you can watch progress or cancel one without scrolling the search results."
+                            android:textColor="@color/text_tertiary"
+                            android:textSize="12sp" />
+                    </LinearLayout>
+                </FrameLayout>
+            </LinearLayout>
         </FrameLayout>
     </LinearLayout>
 
@@ -887,12 +969,15 @@
                 android:tint="@color/accent" />
 
             <TextView
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
+                android:layout_marginStart="5dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="1"
                 android:text="Offline"
                 android:textColor="@color/accent"
-                android:textSize="12sp"
+                android:textSize="11sp"
                 android:textStyle="bold" />
         </LinearLayout>
 
@@ -913,12 +998,15 @@
                 android:tint="@color/text_secondary" />
 
             <TextView
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
+                android:layout_marginStart="5dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="1"
                 android:text="Playlists"
                 android:textColor="@color/text_secondary"
-                android:textSize="12sp" />
+                android:textSize="11sp" />
         </LinearLayout>
 
         <LinearLayout
@@ -938,13 +1026,44 @@
                 android:tint="@color/text_secondary" />
 
             <TextView
-                android:layout_width="wrap_content"
+                android:layout_width="0dp"
                 android:layout_height="wrap_content"
-                android:layout_marginStart="6dp"
+                android:layout_marginStart="5dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
                 android:maxLines="1"
                 android:text="Search"
                 android:textColor="@color/text_secondary"
-                android:textSize="12sp" />
+                android:textSize="11sp" />
+        </LinearLayout>
+
+        <!-- Downloads sits last: it is a status view for work started elsewhere. -->
+        <LinearLayout
+            android:id="@+id/navDownloads"
+            android:layout_width="0dp"
+            android:layout_height="46dp"
+            android:layout_marginStart="6dp"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:layout_width="19dp"
+                android:layout_height="19dp"
+                android:contentDescription="Downloads"
+                android:src="@drawable/ic_download"
+                android:tint="@color/text_secondary" />
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="5dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:maxLines="1"
+                android:text="Saved"
+                android:textColor="@color/text_secondary"
+                android:textSize="11sp" />
         </LinearLayout>
     </LinearLayout>
 

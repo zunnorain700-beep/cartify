@@ -79,6 +79,20 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
     private LinearLayout homeView;
     private LinearLayout libraryView;
     private LinearLayout playlistsView;
+    private LinearLayout downloadsView;
+    private RecyclerView downloadsList;
+    private TextView downloadsStatus;
+    private LinearLayout downloadsEmpty;
+    private TextView downloadsClear;
+    private TrackAdapter downloadsAdapter;
+    /**
+     * Tracks handed to the service, in queue order.
+     *
+     * Progress callbacks carry a queue index, not a position in any adapter. Keeping the
+     * submitted order means a tick can be mapped back to the exact Track object it
+     * belongs to instead of being applied to whatever row happens to sit at that index.
+     */
+    private final List<Track> submitted = new ArrayList<>();
     private TextView playlistsStatus;
     /** Which order the playlist shelf is in; see {@link #sortPlaylists}. */
     private int playlistsSortMode = 0;
@@ -113,7 +127,7 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
      * value is clamped on restore, so a stale index lands somewhere sensible
      * instead of crashing.
      */
-    private final int[] lastScroll = new int[3];
+    private final int[] lastScroll = new int[4];
     private TextView librarySortButton;
 
     /** Bulk-selection chrome, shown in place of the library header while songs are picked. */
@@ -141,6 +155,9 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
     private LinearLayout navPlaylists;
     private ImageView navPlaylistsIcon;
     private TextView navPlaylistsLabel;
+    private LinearLayout navDownloads;
+    private ImageView navDownloadsIcon;
+    private TextView navDownloadsLabel;
 
     private TrackAdapter adapter;
     private SongAdapter songAdapter;
@@ -548,6 +565,9 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         navPlaylists = findViewById(R.id.navPlaylists);
         navPlaylistsIcon = (ImageView) ((LinearLayout) navPlaylists).getChildAt(0);
         navPlaylistsLabel = (TextView) ((LinearLayout) navPlaylists).getChildAt(1);
+        navDownloads = findViewById(R.id.navDownloads);
+        navDownloadsIcon = (ImageView) ((LinearLayout) navDownloads).getChildAt(0);
+        navDownloadsLabel = (TextView) ((LinearLayout) navDownloads).getChildAt(1);
 
         playlistsView = findViewById(R.id.playlistsView);
         playlistsStatus = findViewById(R.id.playlistsStatus);
@@ -557,6 +577,12 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         }
         playlistsList = findViewById(R.id.playlistsList);
         playlistsEmpty = findViewById(R.id.playlistsEmpty);
+
+        downloadsView = findViewById(R.id.downloadsView);
+        downloadsList = findViewById(R.id.downloadsList);
+        downloadsStatus = findViewById(R.id.downloadsStatus);
+        downloadsEmpty = findViewById(R.id.downloadsEmpty);
+        downloadsClear = findViewById(R.id.downloadsClear);
 
         statusText.setText("Ready \u2014 nothing loaded yet");
     }
@@ -589,6 +615,8 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         navHome.setOnClickListener(v -> showTab(TAB_HOME));
         navLibrary.setOnClickListener(v -> showTab(TAB_LIBRARY));
         navPlaylists.setOnClickListener(v -> showTab(TAB_PLAYLISTS));
+        navDownloads.setOnClickListener(v -> showTab(TAB_DOWNLOADS));
+        if (downloadsClear != null) downloadsClear.setOnClickListener(v -> clearFailedDownloads());
         findViewById(R.id.newPlaylistButton).setOnClickListener(v -> createPlaylist());
         findViewById(R.id.emptyNewPlaylist).setOnClickListener(v -> createPlaylist());
 
@@ -670,6 +698,27 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         });
         playlistsList.setLayoutManager(new LinearLayoutManager(this));
         playlistsList.setAdapter(playlistAdapter);
+
+        // The Downloads page reuses the same row renderer and the same Track objects, so a
+        // cancel or retry there acts on the real queue rather than on a copy.
+        downloadsAdapter = new TrackAdapter(new TrackAdapter.Actions() {
+            @Override
+            public void onDownloadClicked(Track track, int index) {
+                startDownload(single(track));
+            }
+
+            @Override
+            public void onCancelClicked(Track track, int index) {
+                cancelSubmitted(track);
+            }
+
+            @Override
+            public void onPlayClicked(Track track, int index) {
+                playDownloadsFrom(index);
+            }
+        });
+        downloadsList.setLayoutManager(new LinearLayoutManager(this));
+        downloadsList.setAdapter(downloadsAdapter);
     }
 
     // ---------------------------------------------------------------- tabs
@@ -677,6 +726,7 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
     private static final int TAB_HOME = 0;
     private static final int TAB_LIBRARY = 1;
     private static final int TAB_PLAYLISTS = 2;
+    private static final int TAB_DOWNLOADS = 3;
 
     /** Library opens first: the songs you already own matter more than the paste box. */
     private int activeTab = TAB_HOME;
@@ -716,9 +766,14 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
             showPlaylistsTab();
             return;
         }
+        if (tab == TAB_DOWNLOADS) {
+            showDownloadsTab();
+            return;
+        }
         activeTab = tab;
         boolean library = tab == TAB_LIBRARY;
         if (playlistsView != null) playlistsView.setVisibility(View.GONE);
+        if (downloadsView != null) downloadsView.setVisibility(View.GONE);
         View incoming = library ? libraryView : homeView;
         View outgoing = library ? homeView : libraryView;
 
@@ -754,8 +809,7 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
     /** Stores the scroll position of whatever tab is open right now. */
     private void rememberScroll() {
         if (activeTab < 0 || activeTab >= lastScroll.length) return;
-        RecyclerView target = activeTab == TAB_LIBRARY ? songsList
-                : activeTab == TAB_PLAYLISTS ? playlistsList : list;
+        RecyclerView target = scrollTarget(activeTab);
         if (target == null) return;
         androidx.recyclerview.widget.RecyclerView.LayoutManager lm = target.getLayoutManager();
         if (lm instanceof LinearLayoutManager) {
@@ -774,8 +828,7 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
     private void restoreScroll(int tab) {
         if (tab < 0 || tab >= lastScroll.length) return;
         final int pos = lastScroll[tab];
-        final RecyclerView target = tab == TAB_LIBRARY ? songsList
-                : tab == TAB_PLAYLISTS ? playlistsList : list;
+        final RecyclerView target = scrollTarget(tab);
         if (target == null) return;
         main.post(() -> {
             if (target.getAdapter() == null) return;
@@ -794,6 +847,15 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         styleNav(navHome, navHomeIcon, navHomeLabel, activeTab == TAB_HOME);
         styleNav(navLibrary, navLibraryIcon, navLibraryLabel, activeTab == TAB_LIBRARY);
         styleNav(navPlaylists, navPlaylistsIcon, navPlaylistsLabel, activeTab == TAB_PLAYLISTS);
+        styleNav(navDownloads, navDownloadsIcon, navDownloadsLabel, activeTab == TAB_DOWNLOADS);
+    }
+
+    /** The list each tab scrolls, so scroll memory works without a nested ternary. */
+    private RecyclerView scrollTarget(int tab) {
+        if (tab == TAB_LIBRARY) return songsList;
+        if (tab == TAB_PLAYLISTS) return playlistsList;
+        if (tab == TAB_DOWNLOADS) return downloadsList;
+        return list;
     }
 
     private void styleNav(LinearLayout pill, ImageView icon, TextView label, boolean active) {
@@ -809,7 +871,7 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         rememberScroll();
         activeTab = TAB_PLAYLISTS;
         hideKeyboard();
-        View[] panes = {homeView, libraryView};
+        View[] panes = {homeView, libraryView, downloadsView};
         for (View pane : panes) {
             if (pane != null) {
                 pane.animate().cancel();
@@ -824,6 +886,115 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
                 .setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
         refreshPlaylists();
         syncNav();
+    }
+
+    /** The downloads pane: only work that is queued, running or failed. */
+    private void showDownloadsTab() {
+        rememberScroll();
+        activeTab = TAB_DOWNLOADS;
+        hideKeyboard();
+        View[] panes = {homeView, libraryView, playlistsView};
+        for (View pane : panes) {
+            if (pane != null) {
+                pane.animate().cancel();
+                pane.setVisibility(View.GONE);
+                pane.setAlpha(1f);
+            }
+        }
+        downloadsView.setVisibility(View.VISIBLE);
+        downloadsView.setAlpha(0f);
+        downloadsView.setTranslationY(12f * getResources().getDisplayMetrics().density);
+        downloadsView.animate().alpha(1f).translationY(0f).setDuration(220)
+                .setInterpolator(new android.view.animation.DecelerateInterpolator()).start();
+        refreshDownloads();
+        restoreScroll(TAB_DOWNLOADS);
+        syncNav();
+    }
+
+    /**
+     * Rebuilds the downloads rows from the submitted queue.
+     *
+     * The list is the submitted tracks filtered to unfinished work. Done rows leave the
+     * page because a finished download belongs in the library, not in a live status view.
+     */
+    private void refreshDownloads() {
+        if (downloadsAdapter == null) return;
+        List<Track> shown = new ArrayList<>();
+        int running = 0;
+        int failed = 0;
+        for (Track t : submitted) {
+            if (t.status == Track.QUEUED || t.status == Track.ACTIVE) {
+                shown.add(t);
+                running++;
+            } else if (t.status == Track.ERROR) {
+                shown.add(t);
+                failed++;
+            }
+        }
+        downloadsAdapter.submit(shown);
+        boolean empty = shown.isEmpty();
+        if (downloadsEmpty != null) downloadsEmpty.setVisibility(empty ? View.VISIBLE : View.GONE);
+        if (downloadsStatus != null) {
+            if (empty) {
+                downloadsStatus.setText("No active downloads");
+            } else {
+                String s = running + (running == 1 ? " downloading" : " downloading");
+                if (failed > 0) s += " \u00b7 " + failed + " failed";
+                downloadsStatus.setText(s);
+            }
+        }
+        if (downloadsClear != null) {
+            downloadsClear.setVisibility(failed > 0 ? View.VISIBLE : View.GONE);
+        }
+    }
+
+    /** Drops failed rows from the page without touching their saved state. */
+    private void clearFailedDownloads() {
+        for (Track t : new ArrayList<>(submitted)) {
+            if (t.status == Track.ERROR) submitted.remove(t);
+        }
+        refreshDownloads();
+    }
+
+    /**
+     * Cancels the given track by translating it to its queue index.
+     *
+     * The service cancels by position in the list it was handed, so the index must be
+     * looked up in the submitted order. Passing the adapter position would cancel a
+     * different song whenever the two orders differ.
+     */
+    private void cancelSubmitted(Track track) {
+        int index = submitted.indexOf(track);
+        if (index < 0) return;
+        Intent intent = new Intent(this, DownloadService.class)
+                .setAction(DownloadService.ACTION_CANCEL_TRACK)
+                .putExtra(DownloadService.EXTRA_INDEX, index);
+        startService(intent);
+        track.status = Track.IDLE;
+        track.progress = 0;
+        track.error = "";
+        refreshDownloads();
+        toast("Cancelled " + (track.title == null ? "track" : track.title));
+    }
+
+    /** Plays from the downloads list, which only holds rows with a local file at most. */
+    private void playDownloadsFrom(int index) {
+        List<Track> items = downloadsAdapter.items();
+        if (index < 0 || index >= items.size()) return;
+        List<Track> ready = new ArrayList<>();
+        int start = -1;
+        for (Track t : items) {
+            if (t.localUri != null && !t.localUri.isEmpty()) {
+                if (t == items.get(index)) start = ready.size();
+                ready.add(t);
+            }
+        }
+        if (start < 0) {
+            toast("Not downloaded yet");
+            return;
+        }
+        playback.playQueue(ready, start, "Cartify");
+        openPlayer();
     }
 
     private void refreshPlaylists() {
@@ -1393,6 +1564,11 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
             t.progress = 0;
             t.error = null;
         }
+        // Record the exact order handed to the service: every progress callback carries
+        // an index into this list, not into any adapter.
+        submitted.clear();
+        submitted.addAll(tracks);
+        refreshDownloads();
         adapter.notifyDataSetChanged();
         collectionBar.setVisibility(View.VISIBLE);
         emptyState.setVisibility(View.GONE);
@@ -1424,11 +1600,21 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
      * transfer really stops instead of finishing silently in the background.
      */
     private void cancelDownload(int index) {
-        Intent intent = new Intent(this, DownloadService.class)
-                .setAction(DownloadService.ACTION_CANCEL_TRACK)
-                .putExtra(DownloadService.EXTRA_INDEX, index);
-        startService(intent);
+        if (index < 0 || index >= adapter.getItemCount()) return;
+        Track t = adapter.items().get(index);
+        // The service cancels by queue position, so the adapter position must be
+        // translated first; otherwise a different song is killed.
+        int queueIndex = submitted.indexOf(t);
+        if (queueIndex >= 0) {
+            Intent intent = new Intent(this, DownloadService.class)
+                    .setAction(DownloadService.ACTION_CANCEL_TRACK)
+                    .putExtra(DownloadService.EXTRA_INDEX, queueIndex);
+            startService(intent);
+        }
         adapter.reset(index);
+        t.status = Track.IDLE;
+        t.progress = 0;
+        refreshDownloads();
         statusText.setText("Cancelled one download");
     }
 
@@ -1454,27 +1640,55 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
 
     // ---------------------------------------------------------------- download callbacks
 
+    /**
+     * Resolves a queue index to the Track the service is really working on.
+     *
+     * The service numbers the list it was handed. The search list is rebuilt on every
+     * resolve and the downloads page holds a filtered subset, so applying a queue index
+     * directly to either adapter painted the wrong row and made per-row actions look
+     * broken. Identity is the only stable link between the two.
+     */
+    private Track trackForQueueIndex(int index) {
+        if (index < 0 || index >= submitted.size()) return null;
+        return submitted.get(index);
+    }
+
+    /** Writes one state change onto a track wherever it is currently shown. */
+    private void applyQueueState(Track t, int status, int percent, String detail,
+                                 String uri, String error) {
+        if (t == null) return;
+        t.status = status;
+        t.progress = percent;
+        if (uri != null) t.localUri = uri;
+        if (error != null) t.error = error;
+        int pos = adapter.items().indexOf(t);
+        if (pos >= 0) adapter.update(pos, status, percent, detail, uri, error);
+        if (downloadsAdapter != null) refreshDownloads();
+    }
+
     @Override
     public void onTrackProgress(int index, int percent, String detail) {
-        if (index < adapter.getItemCount()) {
-            adapter.update(index, Track.ACTIVE, percent, detail, null, null);
-            statusText.setText(String.format(Locale.US, "Downloading %d of %d \u2014 %s",
-                    index + 1, adapter.getItemCount(), detail));
-            cancelAllButton.setVisibility(View.VISIBLE);
-        }
+        Track t = trackForQueueIndex(index);
+        if (t == null) return;
+        applyQueueState(t, Track.ACTIVE, percent, detail, null, null);
+        statusText.setText(String.format(Locale.US, "Downloading %d of %d \u2014 %s",
+                index + 1, submitted.size(), detail));
+        cancelAllButton.setVisibility(View.VISIBLE);
     }
 
     @Override
     public void onTrackFinished(int index, String uri, String error) {
-        if (index < adapter.getItemCount()) {
-            if (error == null) adapter.update(index, Track.DONE, 100, "saved", uri, null);
-            else adapter.update(index, Track.ERROR, 0, error, null, error);
-        }
+        Track t = trackForQueueIndex(index);
+        if (t == null) return;
+        if (error == null) applyQueueState(t, Track.DONE, 100, "saved", uri, null);
+        else applyQueueState(t, Track.ERROR, 0, error, null, error);
     }
 
     @Override
     public void onTrackCancelled(int index) {
-        adapter.reset(index);
+        Track t = trackForQueueIndex(index);
+        if (t == null) return;
+        applyQueueState(t, Track.IDLE, 0, "", null, "");
         statusText.setText("Download cancelled");
     }
 
@@ -1491,10 +1705,14 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         }
         statusText.setText(summary);
         queueRunning = false;
-        for (int i = 0; i < adapter.getItemCount(); i++) {
-            Track t = adapter.items().get(i);
-            if (t.status == Track.QUEUED || t.status == Track.ACTIVE) adapter.reset(i);
+        for (Track t : new ArrayList<>(submitted)) {
+            if (t.status == Track.QUEUED || t.status == Track.ACTIVE) {
+                applyQueueState(t, Track.IDLE, 0, "", null, "");
+            }
         }
+        // Finished tracks belong to the library; the page only tracks live work.
+        submitted.clear();
+        refreshDownloads();
         // "Cancel all" makes no sense once the queue has drained; when something failed,
         // the same slot offers a retry instead, so the user is never left with a dead end.
         if (failed > 0) {
