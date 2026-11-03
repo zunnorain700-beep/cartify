@@ -256,7 +256,7 @@ public class DownloadService extends Service implements ProgressBus.Listener {
                                     + "\" stage=" + (e instanceof DownloadEngine.Failure
                                         ? ((DownloadEngine.Failure) e).stage : "unknown")
                                     + " reason=" + message);
-                            ProgressBus.finished(index, null, message);
+                            ProgressBus.finished(index, null, friendlyForRow(message));
                             failed.incrementAndGet();
                         }
                     } finally {
@@ -319,6 +319,29 @@ public class DownloadService extends Service implements ProgressBus.Listener {
         } catch (Throwable e) {
             return PARALLEL;
         }
+    }
+
+    /**
+     * A short, human version of a failure for the row.
+     *
+     * The full message goes to the log and stays there for diagnosis, but a row is one
+     * line wide: "Could not download this track (ERROR: [youtube] vtZgwKb5Bkw: Requested
+     * format is not available. Use --list-formats for a list of available formats)" is
+     * unreadable next to the song title. This keeps the reason and drops the plumbing.
+     */
+    static String friendlyForRow(String message) {
+        if (message == null || message.isEmpty()) return "failed";
+        String m = message;
+        // Drop the yt-dlp prefix and its video id.
+        m = m.replaceAll("\\[youtube\\]\\s*[A-Za-z0-9_-]{6,}:\\s*", "");
+        m = m.replaceAll("(?i)^ERROR:\\s*", "");
+        // Drop the trailing tool advice.
+        m = m.replaceAll("(?i)\\.?\\s*Use --list-formats.*$", "");
+        m = m.replaceAll("(?i)\\.?\\s*Use --cookies.*$", "");
+        m = m.replaceAll("(?i)\\.?\\s*Use --extractor-args.*$", "");
+        if (m.length() > 70) m = m.substring(0, 70).trim() + "\u2026";
+        m = m.trim();
+        return m.isEmpty() ? "failed" : m;
     }
 
     private static String friendly(Exception e) {
