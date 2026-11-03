@@ -31,7 +31,22 @@ public final class DownloadEngine {
     private static final String TAG = "Cartify";
     private static final AtomicBoolean INITIALISED = new AtomicBoolean(false);
     /** Resolved video urls, so retries and repeat downloads skip the search round trip. */
-    private static final Map<String, String> PICKED = new ConcurrentHashMap<>();
+    /**
+     * Search result per query, so a retry or a repeat download skips the lookup.
+     *
+     * Bounded: this used to grow for the lifetime of the process, which on a device that
+     * downloads a lot (or is shared between listeners) is a slow leak. Oldest entries are
+     * dropped once the cap is reached; a dropped entry only costs one more search.
+     */
+    private static final int PICK_CACHE_MAX = 400;
+    private static final Map<String, String> PICKED =
+            java.util.Collections.synchronizedMap(
+                    new java.util.LinkedHashMap<String, String>(64, 0.75f, true) {
+                        @Override
+                        protected boolean removeEldestEntry(Map.Entry<String, String> eldest) {
+                            return size() > PICK_CACHE_MAX;
+                        }
+                    });
     private static final String PREFS = "cartify_prefs";
     private static final String KEY_UPDATE_AT = "ytdlp_updated_at";
     private static final long UPDATE_INTERVAL_MS = 12L * 60L * 60L * 1000L;
@@ -166,7 +181,7 @@ public final class DownloadEngine {
                 String query = t.searchQuery();
                 if (query.trim().isEmpty() || PICKED.containsKey(query)) continue;
                 try {
-                    PICKED.put(query, pickCandidate(query, t.durationMs, new Task()));
+                    PICKED.put(query, pickCandidate(query, t, new Task()));
                 } catch (Throwable ignored) {
                 }
             }
@@ -317,7 +332,7 @@ public final class DownloadEngine {
         report(listener, stage, "Matching track");
         String picked = attempt == 0 ? PICKED.get(query) : null;
         if (picked == null) {
-            picked = pickCandidate(query, expected, task);
+            picked = pickCandidate(query, track, task);
             PICKED.put(query, picked);
         }
         task.check();
@@ -327,7 +342,10 @@ public final class DownloadEngine {
         // whose only streams are video+audio muxed, and "bestaudio/best" then matches
         // nothing at all: "Requested format is not available". The trailing "best" and
         // the wildcard keep a playable stream available on every client.
-        request.addOption("-f", "bestaudio/best/bestaudio*/best*");
+        request.addOption("-f", "bestaudio*/best");
+        // Sort by audio bitrate, highest first, so the chosen stream is the best
+        // the source offers instead of an arbitrary format id.
+        request.addOption("-S", "abr,acodec:opus");
         request.addOption("--no-playlist");
         // The default web client has to solve YouTube's JavaScript player challenge
         // before it can name a stream, which measured 13-20 s per track on this device
@@ -344,7 +362,10 @@ public final class DownloadEngine {
         request.addOption("--no-mtime");
         request.addOption("--extract-audio");
         request.addOption("--audio-format", "mp3");
-        request.addOption("--audio-quality", "5");
+        // V0 is LAME's best variable-bitrate preset (~245 kbps) and the least lossy MP3
+        // this pipeline can produce. It used to be V5 (~130 kbps), which threw away
+        // detail on top of the loss the source already carries.
+        request.addOption("--audio-quality", "0");
 
         // ---------------------------------------------------------------- slow links
         //
@@ -463,18 +484,30 @@ public final class DownloadEngine {
     }
 
     /**
-     * Runs a metadata-only search and returns the video URL whose length and title
-     * best match the Spotify track. Falls back to the top result when nothing is close.
+     * Finds the upload that actually is this song.
+     *
+     * The previous version accepted anything within 20 seconds (or 12.5% of the track)
+     * of the expected length and then fell back to the first search hit, which is how a
+     * "Bonus Track" edit got saved as the real song. Matching is now a scored decision:
+     * title words, artist words, duration and explicit variant tags all count, and a
+     * candidate that does not clear the bar is rejected rather than guessed at.
      */
-    private static String pickCandidate(String query, long expected, Task task) throws Failure {
-        // ytsearch resolves all candidates in one metadata call; asking for fewer keeps
-        // that call small, and the top few are the ones that ever win the match anyway.
-        YoutubeDLRequest search = new YoutubeDLRequest("ytsearch4:" + query);
+    private static String pickCandidate(String query, Track track, Task task) throws Failure {
+        long expected = track == null ? 0L : track.durationMs;
+        String wantTitle = normalise(track == null ? query : track.title);
+        String wantArtist = normalise(track == null ? "" : track.artist);
+        String wantAlbum = normalise(track == null ? "" : track.album);
+
+        // Ten candidates instead of four: the right upload is often not in the top four
+        // once live versions, remixes and karaoke tracks are in the results, and this is
+        // still a single metadata call.
+        YoutubeDLRequest search = new YoutubeDLRequest("ytsearch10:" + query);
         search.addOption("--skip-download");
         search.addOption("--no-warnings");
         search.addOption("--flat-playlist");
         search.addOption("--extractor-retries", "1");
-        search.addOption("--print", "%(webpage_url)s\t%(duration)s\t%(title)s");
+        search.addOption("--print",
+                "%(webpage_url)s\t%(duration)s\t%(title)s\t%(uploader)s\t%(channel)s");
         search.addOption("--ignore-errors");
 
         String searchId = "cartify-pick-" + System.nanoTime();
@@ -494,33 +527,177 @@ public final class DownloadEngine {
         }
 
         String bestUrl = "";
+        int bestScore = Integer.MIN_VALUE;
+        String bestTitle = "";
         long bestDiff = Long.MAX_VALUE;
-        String firstUrl = "";
+
         for (String line : out.split("\\r?\\n")) {
             String[] parts = line.split("\\t");
-            if (parts.length < 2) continue;
+            if (parts.length < 3) continue;
             String url = parts[0].trim();
             if (!url.startsWith("http")) continue;
-            if (firstUrl.isEmpty()) firstUrl = url;
-            long dur = parseSeconds(parts[1].trim());
-            if (dur <= 0 || expected <= 0) continue;
-            long diff = Math.abs(dur * 1000 - expected);
-            // Prefer a title that actually mentions the song, then the closest length.
-            String title = parts.length > 2 ? parts[2].toLowerCase(Locale.US) : "";
-            String wanted = query.toLowerCase(Locale.US);
-            if (title.contains(wanted)) diff -= 5000;
-            if (diff < bestDiff) {
-                bestDiff = diff;
+
+            long durMs = Math.round(parseSeconds(parts[1].trim()) * 1000.0);
+            String title = parts[2].trim();
+            String uploader = parts.length > 3 ? parts[3].trim() : "";
+            String channel = parts.length > 4 ? parts[4].trim() : "";
+
+            int score = scoreCandidate(wantTitle, wantArtist, wantAlbum,
+                    expected, title, uploader + " " + channel, durMs);
+            long diff = expected > 0 && durMs > 0 ? Math.abs(durMs - expected) : Long.MAX_VALUE;
+
+            if (score > bestScore || (score == bestScore && diff < bestDiff)) {
+                bestScore = score;
                 bestUrl = url;
+                bestTitle = title;
+                bestDiff = diff;
             }
         }
-        if (!bestUrl.isEmpty() && (expected <= 0 || bestDiff <= Math.max(20000L, expected / 8L))) {
-            return bestUrl;
+
+        // A score below this means nothing in the results looked like the track. Saying so
+        // is better than saving the wrong song under the right name.
+        if (bestUrl.isEmpty() || bestScore < MIN_ACCEPT_SCORE) {
+            throw new Failure("search", bestUrl.isEmpty()
+                    ? "No match found for this song"
+                    : "Only a different recording of \"" + (track == null ? query : track.title)
+                      + "\" was found");
         }
-        if (!firstUrl.isEmpty() && expected <= 0) return firstUrl;
-        if (!bestUrl.isEmpty()) return bestUrl;
-        if (!firstUrl.isEmpty()) return firstUrl;
-        throw new Failure("search", "No match found for this song");
+        return bestUrl;
+    }
+
+    /** Score at which a candidate is trusted as the same recording. */
+    private static final int MIN_ACCEPT_SCORE = 55;
+
+    /**
+     * How much a search result looks like the requested track, 0-100.
+     *
+     * Duration is the strongest single signal because a variant edit is almost always a
+     * different length, but it is not enough alone: a "Bonus Track" re-release can run
+     * within a second of the original. Title and artist words carry the rest, and a
+     * variant marker the user did not ask for subtracts heavily.
+     */
+    private static int scoreCandidate(String wantTitle, String wantArtist, String wantAlbum,
+                                      long expectedMs, String candTitle, String candChannel,
+                                      long candMs) {
+        String title = normalise(candTitle);
+        String channel = normalise(candChannel);
+        if (title.isEmpty()) return 0;
+
+        // --- duration (0-45)
+        int durScore = 0;
+        if (expectedMs > 0 && candMs > 0) {
+            long diff = Math.abs(candMs - expectedMs);
+            if (diff <= 1500) durScore = 45;
+            else if (diff <= 3000) durScore = 38;
+            else if (diff <= 5000) durScore = 28;
+            else if (diff <= 8000) durScore = 16;
+            else if (diff <= 15000) durScore = 6;
+            else durScore = 0;
+        } else {
+            // No length to compare: do not punish, but do not reward either.
+            durScore = 18;
+        }
+
+        // --- title words (0-35)
+        int titleScore = 0;
+        if (!wantTitle.isEmpty()) {
+            if (title.equals(wantTitle)) titleScore = 35;
+            else if (title.contains(wantTitle)) titleScore = 30;
+            else {
+                double cov = coverage(wantTitle, title);
+                titleScore = (int) Math.round(cov * 26);
+            }
+        }
+
+        // --- artist (0-20), looked for in the title or the channel name
+        int artistScore = 0;
+        if (!wantArtist.isEmpty()) {
+            if (title.contains(wantArtist) || channel.contains(wantArtist)) artistScore = 20;
+            else {
+                double cov = Math.max(coverage(wantArtist, title), coverage(wantArtist, channel));
+                artistScore = (int) Math.round(cov * 16);
+            }
+        } else {
+            artistScore = 8;
+        }
+
+        int score = durScore + titleScore + artistScore;
+
+        // --- variant penalty
+        // A marker the user did not ask for means this is a different recording, however
+        // close its length happens to be.
+        String asked = wantTitle + " " + wantAlbum;
+        for (String marker : VARIANT_MARKERS) {
+            boolean inCandidate = title.contains(marker) || channel.contains(marker);
+            boolean inWanted = asked.contains(marker);
+            if (!inCandidate || inWanted) continue;
+            // A lyrics upload is the same recording in worse packaging, so it loses less
+            // than a genuinely different performance would.
+            boolean packagingOnly = marker.equals("lyrics") || marker.equals("lyric video")
+                    || marker.equals("legendado") || marker.equals("tradução")
+                    || marker.equals("traducao") || marker.equals("letra")
+                    || marker.equals("paroles") || marker.equals("subtitulado");
+            score -= packagingOnly ? 22 : 40;
+        }
+
+        // Official sources are the ones that carry the master audio. A Topic channel is
+        // YouTube's auto-generated home for a label's catalogue, so it is the single best
+        // signal that this upload is the released recording and not a re-upload.
+        boolean official = channel.contains("topic") || channel.contains("vevo")
+                || title.contains("official audio") || title.contains("official music video")
+                || title.contains("official video");
+        if (official) score += 12;
+        if (title.contains("official audio")) score += 4;
+
+        return score;
+    }
+
+    /** Markers that mean the upload is a different recording unless it was asked for. */
+    private static final String[] VARIANT_MARKERS = {
+            "bonus track", "remix", "cover", "live", "instrumental", "karaoke",
+            "sped up", "slowed", "nightcore", "8d", "reverb", "acoustic",
+            "demo", "edit", "extended", "radio version", "reprise",
+            // A lyrics video is a still image over audio that has usually been re-encoded
+            // at least once. It scored 88 against 78 for the official audio in testing,
+            // which is exactly backwards: it is a re-upload, not the source.
+            "lyrics", "lyric video", "legendado", "tradução", "traducao",
+            "letra", "paroles", "subtitulado", "video oficial legendado",
+            // Concert and festival captures are never the studio recording.
+            "live at", "pinkpop", "glastonbury", "concert", "festival",
+    };
+
+    /**
+     * Fraction of the wanted words that appear in the candidate, 0-1.
+     *
+     * Word-based rather than substring-based so "Silenced By The Night" still matches a
+     * title that reads "Keane - Silenced by the Night (Official Video)".
+     */
+    private static double coverage(String wanted, String candidate) {
+        String[] words = wanted.split(" ");
+        if (words.length == 0) return 0;
+        int hit = 0;
+        int total = 0;
+        for (String w : words) {
+            if (w.isEmpty() || w.length() <= 1) continue;
+            total++;
+            if (candidate.contains(w)) hit++;
+        }
+        return total == 0 ? 0 : (double) hit / total;
+    }
+
+    /**
+     * Lowercases, strips punctuation and folds the spelling variants that differ between
+     * Spotify metadata and YouTube titles.
+     */
+    private static String normalise(String value) {
+        if (value == null) return "";
+        String s = value.toLowerCase(Locale.US);
+        s = s.replace("&", " and ").replace("feat.", " ").replace("feat", " ")
+                .replace("ft.", " ").replace("ft ", " ")
+                .replace("’", "'").replace("‘", "'").replace("“", "\"")
+                .replace("”", "\"").replace("–", "-").replace("—", "-");
+        s = s.replaceAll("[^a-z0-9' ]+", " ").replaceAll("\\s+", " ").trim();
+        return s;
     }
 
     private static long parseSeconds(String value) {
