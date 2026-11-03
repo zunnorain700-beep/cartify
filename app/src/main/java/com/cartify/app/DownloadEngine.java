@@ -743,9 +743,60 @@ public final class DownloadEngine {
         for (String w : words) {
             if (w.isEmpty() || w.length() <= 1) continue;
             total++;
-            if (candidate.contains(w)) hit++;
+            if (candidate.contains(w)) {
+                hit++;
+            } else if (fuzzyWordPresent(w, candidate)) {
+                // Half credit: the word is there in a different spelling.
+                hit++;
+            }
         }
         return total == 0 ? 0 : (double) hit / total;
+    }
+
+    /**
+     * Whether {@code candidate} contains a word one or two letters away from {@code wanted}.
+     *
+     * Song titles are transliterated inconsistently, and the difference is invisible until
+     * a download fails: Spotify has "Dhoom Majale Dhoom", YouTube has "Dhoom Machale", and
+     * one changed consonant made the app reject the only correct upload. Two edits covers
+     * the transliteration pairs that actually occur (j/c, s/sh, a/e) without letting an
+     * unrelated word through, and only words of five letters or more are compared so short
+     * words cannot drift into each other.
+     */
+    private static boolean fuzzyWordPresent(String wanted, String candidate) {
+        if (wanted.length() < 5) return false;
+        int allowed = wanted.length() >= 8 ? 2 : 1;
+        for (String word : candidate.split(" ")) {
+            if (word.isEmpty()) continue;
+            if (Math.abs(word.length() - wanted.length()) > allowed) continue;
+            if (editsWithin(wanted, word, allowed)) return true;
+        }
+        return false;
+    }
+
+    /** True when the two words differ by at most {@code max} insertions, deletions or swaps. */
+    private static boolean editsWithin(String a, String b, int max) {
+        int n = a.length();
+        int m = b.length();
+        if (Math.abs(n - m) > max) return false;
+        int[] prev = new int[m + 1];
+        int[] cur = new int[m + 1];
+        for (int j = 0; j <= m; j++) prev[j] = j;
+        for (int i = 1; i <= n; i++) {
+            cur[0] = i;
+            int rowMin = cur[0];
+            for (int j = 1; j <= m; j++) {
+                int cost = a.charAt(i - 1) == b.charAt(j - 1) ? 0 : 1;
+                cur[j] = Math.min(Math.min(cur[j - 1] + 1, prev[j] + 1), prev[j - 1] + cost);
+                if (cur[j] < rowMin) rowMin = cur[j];
+            }
+            // The whole row already exceeds the budget: no later row can come back under it.
+            if (rowMin > max) return false;
+            int[] swap = prev;
+            prev = cur;
+            cur = swap;
+        }
+        return prev[m] <= max;
     }
 
     /**
