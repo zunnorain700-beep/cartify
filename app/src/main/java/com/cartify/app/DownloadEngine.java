@@ -494,7 +494,10 @@ public final class DownloadEngine {
      */
     private static String pickCandidate(String query, Track track, Task task) throws Failure {
         long expected = track == null ? 0L : track.durationMs;
-        String wantTitle = normalise(track == null ? query : track.title);
+        // Spotify titles carry catalogue qualifiers that no upload repeats: "Deva Deva
+        // (From \"Brahmastra\")" is the song "Deva Deva". Leaving them in made the wanted
+        // title look only 75% present in a correctly named upload, which cost real matches.
+        String wantTitle = stripQualifiers(normalise(track == null ? query : track.title));
         String wantArtist = normalise(track == null ? "" : track.artist);
         String wantAlbum = normalise(track == null ? "" : track.album);
 
@@ -529,6 +532,9 @@ public final class DownloadEngine {
         String bestUrl = "";
         int bestScore = Integer.MIN_VALUE;
         String bestTitle = "";
+        String bestChannel = "";
+        /** How certainly the best candidate IS this song, ignoring its length. */
+        int bestIdentity = 0;
         long bestDiff = Long.MAX_VALUE;
 
         for (String line : out.split("\\r?\\n")) {
@@ -542,8 +548,10 @@ public final class DownloadEngine {
             String uploader = parts.length > 3 ? parts[3].trim() : "";
             String channel = parts.length > 4 ? parts[4].trim() : "";
 
+            // Two-element out-parameter: [0] total score, [1] title+artist only.
+            int[] scores = new int[2];
             int score = scoreCandidate(wantTitle, wantArtist, wantAlbum,
-                    expected, title, uploader + " " + channel, durMs);
+                    expected, title, uploader + " " + channel, durMs, scores);
             long diff = expected > 0 && durMs > 0 ? Math.abs(durMs - expected) : Long.MAX_VALUE;
 
             if (score > bestScore || (score == bestScore && diff < bestDiff)) {
@@ -551,27 +559,50 @@ public final class DownloadEngine {
                 bestUrl = url;
                 bestTitle = title;
                 bestDiff = diff;
+                bestIdentity = scores[1];
+                bestChannel = uploader + " " + channel;
             }
         }
 
         // A score below this means nothing in the results looked like the track. Saying so
         // is better than saving the wrong song under the right name.
-        if (bestUrl.isEmpty() || bestScore < MIN_ACCEPT_SCORE) {
+        // Duration is the strongest signal when the uploads are ambiguous, but it must not
+        // veto a song whose identity is already certain. A YouTube \"Full Song\" carries an
+        // intro and outro the Spotify master does not, so a perfect match can run 20 s
+        // longer and score nothing for length: \"Dil Diyan Gallan Atif Aslam\" matched an
+        // upload titled exactly that, by exactly that artist, and was still rejected at 50.
+        //
+        // So a candidate whose title and artist clearly name this song is accepted whatever
+        // its length, and length decides only between candidates that are otherwise unclear.
+        boolean certain = bestIdentity >= IDENTITY_ACCEPT_SCORE;
+        if (bestUrl.isEmpty() || (bestScore < MIN_ACCEPT_SCORE && !certain)) {
             // A silent rejection is indistinguishable from a broken downloader when the
             // user sees a failed row. Recording the query, the best candidate and its
             // score makes every failure explainable from the log alone.
             Log.w(TAG, "rejected match: query=\"" + query + "\" bestScore=" + bestScore
-                    + " best=\"" + bestTitle + "\" expected=" + expected + "ms");
+                    + " identity=" + bestIdentity + " best=\"" + bestTitle
+                    + "\" channel=\"" + bestChannel + "\" expected=" + expected + "ms");
             throw new Failure("search", bestUrl.isEmpty()
                     ? "No match found for this song"
                     : "Only a different recording of \"" + (track == null ? query : track.title)
                       + "\" was found (best match \"" + bestTitle + "\")");
         }
+        Log.d(TAG, "matched \"" + query + "\" -> \"" + bestTitle + "\" score=" + bestScore
+                + " identity=" + bestIdentity);
         return bestUrl;
     }
 
     /** Score at which a candidate is trusted as the same recording. */
     private static final int MIN_ACCEPT_SCORE = 55;
+
+    /**
+     * Title plus artist score at which the song is identified beyond reasonable doubt.
+     *
+     * Title is worth 35 and artist 20, so 42 means the artist matches in full and most of
+     * the title does, or the title matches in full and most of the artist does. Below that
+     * the length still has to carry the decision.
+     */
+    private static final int IDENTITY_ACCEPT_SCORE = 42;
 
     /**
      * How much a search result looks like the requested track, 0-100.
@@ -583,7 +614,7 @@ public final class DownloadEngine {
      */
     private static int scoreCandidate(String wantTitle, String wantArtist, String wantAlbum,
                                       long expectedMs, String candTitle, String candChannel,
-                                      long candMs) {
+                                      long candMs, int[] parts) {
         String title = normalise(candTitle);
         String channel = normalise(candChannel);
         if (title.isEmpty()) return 0;
@@ -626,6 +657,10 @@ public final class DownloadEngine {
             artistScore = 8;
         }
 
+        // Reported separately so the caller can tell "this is the song but the length is
+        // off" from "this may not be the song at all".
+        if (parts != null && parts.length > 1) parts[1] = titleScore + artistScore;
+
         int score = durScore + titleScore + artistScore;
 
         // --- variant penalty
@@ -654,7 +689,30 @@ public final class DownloadEngine {
         if (official) score += 12;
         if (title.contains("official audio")) score += 4;
 
+        if (parts != null && parts.length > 0) parts[0] = score;
         return score;
+    }
+
+    /**
+     * Drops a trailing parenthetical or bracket group from a normalised title.
+     *
+     * Spotify names a track after the release it came from: "Deva Deva (From \"Brahmastra\")",
+     * "Song (Deluxe Edition)", "Track (feat. Someone)". No upload repeats that, so keeping
+     * it made the wanted title look only partly present in a correct result. Only one group
+     * is removed, and only from the end, so a title that genuinely contains brackets in the
+     * middle of its name is left alone.
+     */
+    private static String stripQualifiers(String title) {
+        if (title == null || title.isEmpty()) return "";
+        String out = title.trim();
+        java.util.regex.Pattern tail = java.util.regex.Pattern.compile("\\s*[\\[\\(][^\\[\\(\\)\\]]*[\\]\\)]\\s*$");
+        // Repeat: "Track (Live) (Deluxe)" should lose both groups.
+        for (int guard = 0; guard < 3; guard++) {
+            String next = tail.matcher(out).replaceAll("").trim();
+            if (next.equals(out) || next.isEmpty()) break;
+            out = next;
+        }
+        return out;
     }
 
     /** Markers that mean the upload is a different recording unless it was asked for. */
