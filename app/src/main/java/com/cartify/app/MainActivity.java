@@ -161,6 +161,7 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         playIntro();
         checkForUpdates();
         renderRecentSearches();
+        showGreeting();
         loadRecommendations();
     }
 
@@ -807,6 +808,40 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         }
     }
 
+    /** Greets by the phone's own clock, the way Spotify's home screen does. */
+    private void showGreeting() {
+        TextView greeting = findViewById(R.id.greetingText);
+        if (greeting == null) return;
+        greeting.setText(greetingForHour(java.util.Calendar.getInstance()
+                .get(java.util.Calendar.HOUR_OF_DAY)));
+    }
+
+    /** Split out so the wording can be checked without a running activity. */
+    static String greetingForHour(int hour) {
+        if (hour >= 5 && hour < 12) return "Good morning";
+        if (hour >= 12 && hour < 17) return "Good afternoon";
+        if (hour >= 17 && hour < 22) return "Good evening";
+        return "Good night";
+    }
+    /**
+     * Hides the paste-a-link card once there are results to look at.
+     *
+     * The home pane is a vertical stack and the results list gets whatever height is left.
+     * With the link card always expanded, the rows were squeezed to nothing and the shelf
+     * appeared to overlap them. Collapsing the card the first time a list arrives gives the
+     * rows the whole screen, and the search box above stays put.
+     */
+    private void collapsePasteBlock() {
+        View card = findViewById(R.id.pasteBlock);
+        if (card == null) return;
+        if (card.getVisibility() == View.VISIBLE) {
+            card.animate().alpha(0f).setDuration(140).withEndAction(() -> {
+                card.setVisibility(View.GONE);
+                card.setAlpha(1f);
+            }).start();
+        }
+    }
+
     private void loadRecommendations() {
         if (adapter == null || adapter.getItemCount() > 0) return;
         MusicSearch.recommendations(new MusicSearch.Callback() {
@@ -841,8 +876,11 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         }
         hideKeyboard();
         // Remembered before the request so a failed search is still one tap to retry.
+        View pasteBlock = findViewById(R.id.pasteBlock);
+        if (pasteBlock != null) pasteBlock.setVisibility(View.VISIBLE);
         SearchHistory.remember(this, query);
         renderRecentSearches();
+        showGreeting();
         setBusy(true, "Searching for " + query + "...");
         MusicSearch.search(query, new MusicSearch.Callback() {
             @Override
@@ -903,7 +941,13 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
             if (resolved.tracks.size() > 1) {
                 cardAdapter.submit(resolved.tracks);
                 recRail.setVisibility(View.VISIBLE);
-                if (recHeader != null) recHeader.setVisibility(View.VISIBLE);
+                if (recHeader != null) {
+                    // The collection bar directly above already names this list, so the
+                    // shelf header only adds value when it says something different.
+                    String shelfLabel = resolved.tracks.isEmpty() ? "" : "More like this";
+                    recHeader.setText(shelfLabel);
+                    recHeader.setVisibility(shelfLabel.isEmpty() ? View.GONE : View.VISIBLE);
+                }
             } else {
                 cardAdapter.submit(new ArrayList<>());
                 recRail.setVisibility(View.GONE);
@@ -915,6 +959,7 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         // inside ViewGroup.dispatchDraw when the timer fired mid-draw:
         // LayoutAnimationController.isDone() on a null reference. A cosmetic entrance is
         // not worth a crash on the most common action in the app.
+        collapsePasteBlock();
         collectionBar.setVisibility(View.VISIBLE);
         emptyState.setVisibility(View.GONE);
         collectionName.setText(resolved.name);
