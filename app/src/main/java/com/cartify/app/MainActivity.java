@@ -800,6 +800,27 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         });
     }
 
+    /**
+     * Re-runs every row that ended in an error.
+     *
+     * A failed track used to be a dead end: the only way to try again was to paste the
+     * link over and hope the duplicate guard had not already marked the rest saved. The
+     * failures are usually transient (a dropped connection, a client that offered no
+     * stream), so retrying just those rows is worth one tap.
+     */
+    private void retryFailed() {
+        List<Track> failed = new ArrayList<>();
+        for (Track t : adapter.items()) {
+            if (t.status == Track.ERROR) failed.add(t);
+        }
+        if (failed.isEmpty()) {
+            toast("Nothing to retry");
+            return;
+        }
+        toast(failed.size() == 1 ? "Retrying 1 track" : "Retrying " + failed.size() + " tracks");
+        startDownload(failed);
+    }
+
     private void startDownload(List<Track> tracks) {
         if (tracks.isEmpty()) {
             toast("Nothing to download");
@@ -814,6 +835,12 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         collectionBar.setVisibility(View.VISIBLE);
         emptyState.setVisibility(View.GONE);
         statusText.setText("Starting downloader\u2026");
+        // The button doubles as "Cancel all" and "Retry failed". A fresh queue must get
+        // the cancel behaviour back, otherwise a stale retry handler would be attached to
+        // a download that is already running.
+        cancelAllButton.setText("Cancel all");
+        cancelAllButton.setOnClickListener(v -> cancelAllDownloads());
+        cancelAllButton.setVisibility(View.VISIBLE);
 
         JSONArray arr = new JSONArray();
         for (Track t : tracks) {
@@ -900,10 +927,19 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
             summary = completed + " saved \u00b7 " + failed + " failed";
         }
         statusText.setText(summary);
-        cancelAllButton.setVisibility(View.GONE);
         for (int i = 0; i < adapter.getItemCount(); i++) {
             Track t = adapter.items().get(i);
             if (t.status == Track.QUEUED || t.status == Track.ACTIVE) adapter.reset(i);
+        }
+        // "Cancel all" makes no sense once the queue has drained; when something failed,
+        // the same slot offers a retry instead, so the user is never left with a dead end.
+        if (failed > 0) {
+            cancelAllButton.setText("Retry " + failed + " failed");
+            cancelAllButton.setVisibility(View.VISIBLE);
+            cancelAllButton.setOnClickListener(v -> retryFailed());
+        } else {
+            cancelAllButton.setVisibility(View.GONE);
+            cancelAllButton.setOnClickListener(v -> cancelAllDownloads());
         }
         refreshLibrary();
     }
