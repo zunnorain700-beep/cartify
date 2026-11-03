@@ -172,6 +172,91 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         });
     }
 
+    /**
+     * App-wide actions, reachable without opening a song first.
+     *
+     * Everything here was previously buried: the update check only existed inside a
+     * single song's overflow menu, and there was no way at all to see how much space the
+     * library occupies or how many songs are on the device.
+     */
+    private void showAppMenu(View anchor) {
+        List<MenuSheet.Item> items = new ArrayList<>();
+        items.add(new MenuSheet.Item(R.drawable.ic_download, "Check for updates",
+                this::checkForUpdatesManually));
+        items.add(new MenuSheet.Item(R.drawable.ic_info, "Library info",
+                this::showLibraryInfo));
+        items.add(new MenuSheet.Item(R.drawable.ic_library, "Rescan music folder",
+                () -> {
+                    refreshLibrary();
+                    toast("Rescanning Music/Cartify");
+                }));
+        MenuSheet.show(this, "Cartify", "Version " + appVersionName(),
+                items.toArray(new MenuSheet.Item[0]));
+    }
+
+    private String appVersionName() {
+        try {
+            return getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            return "unknown";
+        }
+    }
+
+    /**
+     * How many songs are saved and how much room they take.
+     *
+     * The size is summed on a worker thread: a large library is thousands of stat calls,
+     * and doing that on the main thread is exactly the kind of thing that produces a
+     * visible freeze for no reason.
+     */
+    private void showLibraryInfo() {
+        final int count = libraryAll.size();
+        io.execute(() -> {
+            long bytes = 0L;
+            for (Track t : new ArrayList<>(libraryAll)) {
+                if (t.localUri == null || t.localUri.isEmpty()) continue;
+                try (android.content.res.AssetFileDescriptor fd =
+                             getContentResolver().openAssetFileDescriptor(
+                                     android.net.Uri.parse(t.localUri), "r")) {
+                    if (fd != null) bytes += Math.max(0L, fd.getLength());
+                } catch (Exception ignored) {
+                }
+            }
+            final long total = bytes;
+            main.post(() -> {
+                String size = total >= 1024L * 1024L * 1024L
+                        ? String.format(Locale.US, "%.1f GB", total / (1024.0 * 1024 * 1024))
+                        : String.format(Locale.US, "%.0f MB", total / (1024.0 * 1024));
+                MenuSheet.show(this, "Library info",
+                        count + (count == 1 ? " song" : " songs") + " \u00b7 " + size
+                                + " in Music/Cartify",
+                        new MenuSheet.Item(R.drawable.ic_close, "Close", () -> {
+                        }));
+            });
+        });
+    }
+
+    /**
+     * The user asked for an update check explicitly.
+     *
+     * The automatic check is deliberately silent, which is right on launch but wrong when
+     * someone taps the item: saying nothing looks broken. This one always answers, either
+     * with the update sheet or with "you are up to date".
+     */
+    private void checkForUpdatesManually() {
+        toast("Checking for updates\u2026");
+        Updater.check(this, true, release -> {
+            if (isFinishing()) return;
+            if (release == null) {
+                toast("Cartify is up to date");
+            } else {
+                // A manual check ignores the \"already offered\" flag: asking again is a
+                // request to see it again.
+                showUpdateSheet(release);
+            }
+        });
+    }
+
     /** Builds the "update available" sheet with the release notes and a download button. */
     private void showUpdateSheet(final Updater.Release release) {
         String notes = release.notes == null ? "" : release.notes.trim();
@@ -287,6 +372,8 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         if (librarySortButton != null) {
             librarySortButton.setOnClickListener(v -> cycleLibrarySort());
         }
+        View appMenu = findViewById(R.id.appMenu);
+        if (appMenu != null) appMenu.setOnClickListener(this::showAppMenu);
         librarySearch = findViewById(R.id.librarySearch);
 
         libraryHeader = findViewById(R.id.libraryHeader);
@@ -1331,6 +1418,8 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
                 () -> addToPlaylist(t)));
         items.add(new MenuSheet.Item(R.drawable.ic_info, "Open full player",
                 () -> openPlayer()));
+        items.add(new MenuSheet.Item(R.drawable.ic_download, "Check for updates",
+                this::checkForUpdatesManually));
         MenuSheet.show(this, t.title, subtitle, items.toArray(new MenuSheet.Item[0]));
     }
 

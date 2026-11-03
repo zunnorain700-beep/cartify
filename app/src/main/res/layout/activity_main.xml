@@ -338,6 +338,18 @@
                         android:text="Newest"
                         android:textColor="@color/text_secondary"
                         android:textSize="11sp" />
+
+                    <!-- App-wide actions: update check, storage info, playlist shortcuts. -->
+                    <ImageButton
+                        android:id="@+id/appMenu"
+                        android:layout_width="30dp"
+                        android:layout_height="30dp"
+                        android:layout_marginStart="8dp"
+                        android:background="@drawable/bg_chip"
+                        android:contentDescription="More options"
+                        android:padding="7dp"
+                        android:src="@drawable/ic_more"
+                        android:tint="@color/text_secondary" />
                 </LinearLayout>
 
                 <!-- Replaces nothing; it is inserted above the search box while selecting. -->
