@@ -1768,6 +1768,27 @@ public class MainActivity extends AppCompatActivity implements ProgressBus.Liste
         resolveButton.setEnabled(!busy);
         resolveButton.setText(busy ? "Loading\u2026" : "Load track list");
         statusText.setText(message);
+        pulseBusy(busy);
+    }
+
+    /**
+     * Breathes the status line while work is in flight.
+     *
+     * A search takes a network round trip, and a line of static text for several seconds
+     * reads as a frozen app. Fading between two alphas is cheap, needs no extra view, and
+     * stops the moment the work finishes.
+     */
+    private void pulseBusy(boolean busy) {
+        if (statusText == null) return;
+        statusText.animate().cancel();
+        if (!busy) {
+            statusText.setAlpha(1f);
+            return;
+        }
+        statusText.setAlpha(0.45f);
+        statusText.animate().alpha(1f).setDuration(700)
+                .setInterpolator(new android.view.animation.AccelerateDecelerateInterpolator())
+                .withEndAction(() -> pulseBusy(true)).start();
     }
 
     private void hideKeyboard() {
